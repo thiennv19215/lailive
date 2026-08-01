@@ -65,9 +65,13 @@ describe('SceneRuntimeService', () => {
     const health = await fetch(`${status.url}health`).then((response) => response.json());
     expect(health).toMatchObject({ running: true, host: '127.0.0.1', hasScene: false });
 
+    const runtimeScript = await fetch(`${status.url}runtime.js`);
+    expect(runtimeScript.headers.get('cache-control')).toBe('no-store');
+
     const gif = await fetch(`${status.url}assets/flower-gif`);
     expect(gif.status).toBe(200);
     expect(gif.headers.get('content-type')).toBe('image/gif');
+    expect(gif.headers.get('cache-control')).toBe('no-store');
     expect((await gif.arrayBuffer()).byteLength).toBeGreaterThan(100);
 
     const whiteBackground = await fetch(`${status.url}assets/background-white-clean`);
@@ -84,6 +88,7 @@ describe('SceneRuntimeService', () => {
     const controlledMedia = await fetch(`${status.url}assets/media-controlled`);
     expect(controlledMedia.status).toBe(200);
     expect(controlledMedia.headers.get('content-type')).toBe('image/jpeg');
+    expect(controlledMedia.headers.get('cache-control')).toBe('no-store');
 
     const audioDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-livestream-audio-'));
     temporaryDirectories.push(audioDirectory);

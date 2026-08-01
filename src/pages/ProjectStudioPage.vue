@@ -39,6 +39,7 @@ import {
 import { fitContainedPreviewBox, isPreviewRenderable, previewLayerBox, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
 import { ensureUniqueLayerIds } from '../shared/studio/layer-identity';
 import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type ProjectMediaReference, type ProjectMediaStatus, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
+import type { ObsConfigInput, ObsStatus } from '../shared/contracts/obs';
 import SceneMediaLayer from '../components/SceneMediaLayer.vue';
 import StudioAssetBrowser from '../components/studio/StudioAssetBrowser.vue';
 import StudioInspectorSidebar from '../components/studio/StudioInspectorSidebar.vue';
@@ -123,6 +124,33 @@ const imageSources = ref<Record<string, string>>({});
 const mediaStatuses = ref<ProjectMediaStatus[]>([]);
 const pendingAvatarMedia = ref<ProjectMediaReference | null>(null);
 const audioSources = ref<Record<string, string>>({});
+const obsConfig = reactive<ObsConfigInput>({
+  kind: 'obs-websocket',
+  host: '127.0.0.1',
+  port: 4455,
+  sceneName: 'AI Livestream',
+  sourceName: 'AI Livestream Browser',
+  width: 1080,
+  height: 1920,
+  fps: 30,
+  password: '',
+});
+const obsStatus = ref<ObsStatus>({
+  connected: false,
+  kind: 'obs-websocket',
+  version: null,
+  sceneName: 'AI Livestream',
+  sourceName: 'AI Livestream Browser',
+  browserSourceReady: false,
+  programSceneActive: false,
+  virtualCameraAvailable: false,
+  virtualCameraActive: false,
+  virtualCameraOwned: false,
+  lastError: null,
+});
+const obsMessage = ref('Chưa kết nối OBS.');
+const obsBusy = ref(false);
+const obsHasSavedPassword = ref(false);
 const previewMediaAspectRatios = ref<Record<string, number>>({});
 const pinManagerState = ref<'closed' | 'checking' | 'login-required'>('closed');
 let pinManagerTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -308,6 +336,7 @@ onMounted(async () => {
     notice.value = 'Đã sửa ID nguồn bị trùng để trình chỉnh sửa hoạt động ổn định.';
     await saveSceneNow();
   }
+  await loadObsState();
 });
 
 onBeforeRouteLeave(async () => {
@@ -341,6 +370,7 @@ watch([
   mediaReferences,
 ], () => {
   if (!projectLoaded.value || hydratingProject.value) return;
+  void publishPlayback();
   if (autosaveTimer !== null) globalThis.clearTimeout(autosaveTimer);
   autosaveStatus.value = 'idle';
   autosaveTimer = globalThis.setTimeout(() => { void saveSceneNow(); }, 350);
@@ -652,9 +682,143 @@ function saveAvatarScripts(): void {
   notice.value = 'Đã lưu kịch bản avatar trong phiên mock local.';
 }
 
-function saveLivestreamSettings(): void {
+async function saveLivestreamSettings(): Promise<void> {
+  try {
+    const saved = await globalThis.window.desktopApi.obs.setConfig(obsConfigInput());
+    obsHasSavedPassword.value = saved.hasPassword;
+  } catch (error) {
+    obsMessage.value = obsErrorMessage(error);
+    return;
+  }
   dialog.value = null;
-  notice.value = 'Đã lưu cài đặt livestream trong phiên mock.';
+  notice.value = 'Đã lưu cài đặt livestream và cấu hình OBS.';
+}
+
+function obsConfigInput(): ObsConfigInput {
+  return JSON.parse(JSON.stringify({
+    ...obsConfig,
+    port: Number(obsConfig.port),
+    width: Number(obsConfig.width),
+    height: Number(obsConfig.height),
+    fps: Number(obsConfig.fps),
+    password: obsConfig.password || undefined,
+  })) as ObsConfigInput;
+}
+
+function obsErrorMessage(error: unknown): string {
+  const code = error instanceof Error ? error.message : String(error);
+  const messages: Record<string, string> = {
+    OBS_CONNECT_FAILED: 'Không kết nối được OBS. Hãy mở OBS và bật WebSocket Server.',
+    OBS_CONNECT_TIMEOUT: 'OBS không phản hồi. Kiểm tra port WebSocket (mặc định 4455).',
+    OBS_CONNECTION_CLOSED: 'OBS đã đóng hoặc khởi động lại. Hãy mở OBS rồi kết nối lại.',
+    OBS_RESPONSE_TIMEOUT: 'OBS không trả lời lệnh. Hãy kết nối lại; nếu OBS vừa đóng, mở lại OBS trước.',
+    OBS_PASSWORD_REQUIRED: 'OBS đang yêu cầu mật khẩu. Nhập mật khẩu WebSocket bên dưới.',
+    OBS_NOT_CONNECTED: 'OBS chưa được kết nối.',
+    OBS_SCENE_NAME_CONFLICT: 'Tên scene đã tồn tại nhưng không do ứng dụng quản lý. Hãy chọn tên khác.',
+    OBS_SOURCE_NAME_CONFLICT: 'Tên Browser Source đã tồn tại nhưng không do ứng dụng quản lý. Hãy chọn tên khác.',
+    OBS_VIRTUAL_CAMERA_UNAVAILABLE: 'OBS trên máy chưa có Virtual Camera; Browser Source vẫn dùng được.',
+    OBS_VIRTUAL_CAMERA_ALREADY_ACTIVE: 'Virtual Camera đang được ứng dụng khác hoặc phiên OBS hiện tại sử dụng.',
+  };
+  return messages[code] ?? code;
+}
+
+async function loadObsState(): Promise<void> {
+  try {
+    const [saved, status] = await Promise.all([
+      globalThis.window.desktopApi.obs.getConfig(),
+      globalThis.window.desktopApi.obs.getStatus(),
+    ]);
+    Object.assign(obsConfig, {
+      kind: saved.kind,
+      host: saved.host,
+      port: saved.port,
+      sceneName: saved.sceneName,
+      sourceName: saved.sourceName,
+      width: saved.width,
+      height: saved.height,
+      fps: saved.fps,
+      password: '',
+    });
+    obsHasSavedPassword.value = saved.hasPassword;
+    obsStatus.value = status;
+    if (status.connected) obsMessage.value = status.browserSourceReady ? 'Browser Source đã sẵn sàng.' : 'Đã kết nối OBS.';
+  } catch (error) {
+    obsMessage.value = obsErrorMessage(error);
+  }
+}
+
+async function testObsConnection(): Promise<boolean> {
+  obsBusy.value = true;
+  try {
+    const result = await globalThis.window.desktopApi.obs.testConnection(obsConfigInput());
+    obsMessage.value = result.message;
+    obsStatus.value = await globalThis.window.desktopApi.obs.getStatus();
+    obsHasSavedPassword.value = obsHasSavedPassword.value || Boolean(obsConfig.password);
+    return result.ok;
+  } catch (error) {
+    obsMessage.value = obsErrorMessage(error);
+    await loadObsState();
+    return false;
+  } finally {
+    obsBusy.value = false;
+  }
+}
+
+async function connectObsOutput(): Promise<void> {
+  obsBusy.value = true;
+  try {
+    await publishPlayback();
+    if (!obsStatus.value.connected) {
+      const result = await globalThis.window.desktopApi.obs.testConnection(obsConfigInput());
+      if (!result.ok) throw new Error(result.message);
+    }
+    const runtime = await globalThis.window.desktopApi.sceneRuntime.getStatus();
+    if (!runtime.running || !runtime.url) throw new Error('Scene Runtime chưa sẵn sàng.');
+    const output = await globalThis.window.desktopApi.obs.ensureOutput(runtime.url);
+    obsStatus.value = await globalThis.window.desktopApi.obs.showOutput();
+    obsMessage.value = output.message;
+    notice.value = `${output.message} OBS đang hiển thị scene “${output.sceneName}”.`;
+  } catch (error) {
+    obsMessage.value = obsErrorMessage(error);
+    notice.value = obsMessage.value;
+    await loadObsState();
+  } finally {
+    obsBusy.value = false;
+  }
+}
+
+async function toggleObsCamera(): Promise<void> {
+  obsBusy.value = true;
+  try {
+    obsStatus.value = obsStatus.value.virtualCameraActive
+      ? await globalThis.window.desktopApi.obs.stopVirtualCamera()
+      : await globalThis.window.desktopApi.obs.startVirtualCamera();
+    obsMessage.value = obsStatus.value.virtualCameraActive ? 'Virtual Camera đang bật.' : 'Virtual Camera đã dừng.';
+  } catch (error) {
+    obsMessage.value = obsErrorMessage(error);
+    notice.value = obsMessage.value;
+    await loadObsState();
+  } finally {
+    obsBusy.value = false;
+  }
+}
+
+async function disconnectObs(): Promise<void> {
+  obsBusy.value = true;
+  try {
+    obsStatus.value = await globalThis.window.desktopApi.obs.disconnect();
+    obsMessage.value = 'Đã ngắt kết nối OBS.';
+  } catch (error) {
+    obsMessage.value = obsErrorMessage(error);
+  } finally {
+    obsBusy.value = false;
+  }
+}
+
+function useCanvasSizeForObs(): void {
+  const scene = buildSceneDocument();
+  obsConfig.width = scene.width;
+  obsConfig.height = scene.height;
 }
 
 function checkTikTok(): void {
@@ -905,7 +1069,7 @@ function selectVoice(option: string): void {
       @open-settings="dialog = 'livestream'"
     />
 
-    <StudioMixerFooter @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" />
+    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
 
     <div v-if="avatarLibraryOpen" class="studio-dialog-backdrop" @click.self="avatarLibraryOpen = false">
       <section class="studio-dialog avatar-library-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-library-title">
@@ -947,6 +1111,27 @@ function selectVoice(option: string): void {
           <div class="trigger-table"><header><span>Loại tương tác</span><span>Phản hồi</span><span>Cách trả lời</span></header><div v-for="trigger in triggers" :key="trigger.label"><strong>{{ trigger.label }}</strong><button type="button" class="switch" :class="{ on: trigger.enabled }" :aria-pressed="trigger.enabled" @click="trigger.enabled = !trigger.enabled"><span /></button><span :class="{ muted: !trigger.enabled }">{{ trigger.enabled ? trigger.reply : 'Đã tắt' }}</span></div></div>
           <div class="config-block sliders"><strong>Giới hạn tương tác</strong><p>Cấu hình thời gian chờ để tránh spam.</p><label>Thời gian chờ chung <b>{{ globalCooldown.toFixed(1) }}s</b><input v-model.number="globalCooldown" type="range" min="0" max="10" step="0.5" /></label><label>Thời gian chờ mỗi người dùng <b>{{ userCooldown }}s</b><input v-model.number="userCooldown" type="range" min="5" max="120" step="5" /></label></div>
           <div class="config-block product-pin"><strong>Ghim sản phẩm TikTok</strong><p>Bật để AI tự động ghim sản phẩm theo kịch bản và bình luận.</p><div class="product-pin-status"><span><b>TikTok Live Manager</b><small aria-live="polite">{{ pinManagerStatus }}</small></span><button type="button" class="pin-manager-action" :disabled="pinManagerState === 'checking'" @click="openPinManagerMock"><MonitorUp :size="13" />{{ pinManagerState === 'login-required' ? 'Thử lại' : pinManagerState === 'checking' ? 'Đang mở...' : 'Mở mô phỏng' }}</button></div><div class="product-pin-status"><span><b>Tự động ghim sản phẩm</b><small>Phase 1 không điều khiển Chrome hoặc ghim sản phẩm thật.</small></span><button type="button" class="switch" :class="{ on: productPinEnabled }" :aria-pressed="productPinEnabled" aria-label="Bật tự động ghim sản phẩm" @click="toggleProductPin"><span /></button></div><label>Thời gian ghim tối thiểu <b>{{ minimumPinTime }}s</b><input v-model.number="minimumPinTime" type="range" min="30" max="300" step="10" /></label></div>
+          <div class="config-block obs-config-block">
+            <div><strong>Đầu ra OBS</strong><p>Ứng dụng tự tạo Browser Source từ scene hiện tại qua kết nối loopback an toàn.</p></div>
+            <div class="obs-config-grid">
+              <label>Adapter<select v-model="obsConfig.kind"><option value="obs-websocket">OBS WebSocket</option><option value="mock">Mock kiểm thử</option></select></label>
+              <label>Host<input v-model="obsConfig.host" autocomplete="off" /></label>
+              <label>Port<input v-model.number="obsConfig.port" type="number" min="1" max="65535" /></label>
+              <label>Mật khẩu phiên này<input v-model="obsConfig.password" type="password" autocomplete="off" :placeholder="obsHasSavedPassword ? 'Đã có mật khẩu trong phiên' : 'Mật khẩu OBS WebSocket'" /></label>
+              <label>Tên scene<input v-model="obsConfig.sceneName" /></label>
+              <label>Tên Browser Source<input v-model="obsConfig.sourceName" /></label>
+              <label>Chiều rộng<input v-model.number="obsConfig.width" type="number" min="320" max="7680" /></label>
+              <label>Chiều cao<input v-model.number="obsConfig.height" type="number" min="320" max="7680" /></label>
+              <label>FPS<input v-model.number="obsConfig.fps" type="number" min="1" max="120" /></label>
+            </div>
+            <div class="obs-config-actions">
+              <button type="button" :disabled="obsBusy" @click="useCanvasSizeForObs">Dùng kích thước canvas</button>
+              <button type="button" :disabled="obsBusy" @click="testObsConnection">Kiểm tra kết nối</button>
+              <button type="button" :disabled="obsBusy" @click="connectObsOutput">Tạo/cập nhật output</button>
+              <button type="button" :disabled="obsBusy || !obsStatus.connected" @click="disconnectObs">Ngắt kết nối</button>
+              <small role="status">{{ obsMessage }}</small>
+            </div>
+          </div>
         </div>
         <footer><button type="button" class="save-button" @click="saveLivestreamSettings">Lưu</button></footer>
       </section>

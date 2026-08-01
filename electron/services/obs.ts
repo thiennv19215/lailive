@@ -23,7 +23,11 @@ function sha256Base64(value: string): string {
 class ObsWebSocketClient {
   private socket: WebSocket | null = null;
   private readonly messages: Array<Record<string, unknown>> = [];
-  private readonly waiters = new Set<{ predicate: (message: Record<string, unknown>) => boolean; resolve: (message: Record<string, unknown>) => void }>();
+  private readonly waiters = new Set<{
+    predicate: (message: Record<string, unknown>) => boolean;
+    resolve: (message: Record<string, unknown>) => void;
+    reject: (error: Error) => void;
+  }>();
 
   async connect(config: ObsConfigInput): Promise<string> {
     await this.close();
@@ -40,6 +44,10 @@ class ObsWebSocketClient {
       } catch {
         // Invalid OBS frames are ignored and the handshake/request timeout remains authoritative.
       }
+    });
+    socket.addEventListener('close', () => {
+      if (this.socket === socket) this.socket = null;
+      this.rejectWaiters(new Error('OBS_CONNECTION_CLOSED'));
     });
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('OBS_CONNECT_TIMEOUT')), 5_000);
@@ -74,7 +82,7 @@ class ObsWebSocketClient {
     const socket = this.socket;
     this.socket = null;
     this.messages.length = 0;
-    this.waiters.clear();
+    this.rejectWaiters(new Error('OBS_CONNECTION_CLOSED'));
     if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
   }
 
@@ -82,10 +90,20 @@ class ObsWebSocketClient {
     const existingIndex = this.messages.findIndex(predicate);
     if (existingIndex >= 0) return Promise.resolve(this.messages.splice(existingIndex, 1)[0]!);
     return new Promise((resolve, reject) => {
-      const waiter = { predicate, resolve: (message: Record<string, unknown>) => { clearTimeout(timer); resolve(message); } };
+      const waiter = {
+        predicate,
+        resolve: (message: Record<string, unknown>) => { clearTimeout(timer); resolve(message); },
+        reject: (error: Error) => { clearTimeout(timer); reject(error); },
+      };
       const timer = setTimeout(() => { this.waiters.delete(waiter); reject(new Error('OBS_RESPONSE_TIMEOUT')); }, 5_000);
       this.waiters.add(waiter);
     });
+  }
+
+  private rejectWaiters(error: Error): void {
+    const pending = [...this.waiters];
+    this.waiters.clear();
+    for (const waiter of pending) waiter.reject(error);
   }
 }
 
@@ -111,6 +129,7 @@ export class RealObsAdapter implements ObsAdapter {
       } catch {
         await this.client.request('CreateSceneItem', { sceneName: input.sceneName, sourceName: input.sourceName, sceneItemEnabled: true });
       }
+      await this.client.request('PressInputPropertiesButton', { inputName: input.sourceName, propertyName: 'refreshnocache' });
     }
     return { createdScene: !sceneExists, createdSource: !sourceExists };
   }
@@ -119,7 +138,8 @@ export class RealObsAdapter implements ObsAdapter {
     return result.outputActive === true;
   }
   async getCurrentProgramScene(): Promise<string> {
-    const result = await this.client.request('GetCurrentProgramScene');
+    // OBS 32.2.1 can crash inside GetCurrentProgramScene; GetSceneList exposes the same value.
+    const result = await this.client.request('GetSceneList');
     if (typeof result.currentProgramSceneName !== 'string') throw new Error('OBS_CURRENT_SCENE_UNAVAILABLE');
     return result.currentProgramSceneName;
   }
@@ -154,7 +174,7 @@ export class MockObsAdapter implements ObsAdapter {
 }
 
 export class ObsService {
-  private config: ObsConfigInput = { kind: 'mock', host: '127.0.0.1', port: 4455, sceneName: 'AI Livestream', sourceName: 'AI Livestream Browser', width: 1080, height: 1920, fps: 30 };
+  private config: ObsConfigInput = { kind: 'obs-websocket', host: '127.0.0.1', port: 4455, sceneName: 'AI Livestream', sourceName: 'AI Livestream Browser', width: 1080, height: 1920, fps: 30 };
   private adapter: ObsAdapter | null = null;
   private version: string | null = null;
   private browserSourceReady = false;
@@ -268,12 +288,18 @@ export class ObsService {
   async showOutput(): Promise<ObsStatus> {
     const adapter = this.requireAdapter();
     if (!this.browserSourceReady) throw new Error('OBS_BROWSER_SOURCE_NOT_READY');
-    const currentScene = await adapter.getCurrentProgramScene();
-    if (!this.programSceneActive) this.previousProgramScene = currentScene === this.config.sceneName ? null : currentScene;
-    if (currentScene !== this.config.sceneName) await adapter.setCurrentProgramScene(this.config.sceneName);
-    this.programSceneActive = true;
-    this.lastError = null;
-    return this.getStatus();
+    try {
+      const currentScene = await adapter.getCurrentProgramScene();
+      if (!this.programSceneActive) this.previousProgramScene = currentScene === this.config.sceneName ? null : currentScene;
+      if (currentScene !== this.config.sceneName) await adapter.setCurrentProgramScene(this.config.sceneName);
+      this.programSceneActive = true;
+      this.lastError = null;
+      return this.getStatus();
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : 'OBS_SHOW_OUTPUT_FAILED';
+      await this.disconnect(true);
+      throw error;
+    }
   }
 
   private async waitForVirtualCameraState(expected: boolean, timeoutCode: string): Promise<boolean> {

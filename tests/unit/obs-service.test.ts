@@ -159,7 +159,7 @@ describe('ObsService', () => {
         const requestType = String(message.d?.requestType);
         const requestId = String(message.d?.requestId);
         requests.push(requestType);
-        const responseData = requestType === 'GetSceneList' ? { scenes: [] }
+        const responseData = requestType === 'GetSceneList' ? { scenes: [], currentProgramSceneName: currentProgramScene }
           : requestType === 'GetInputList' ? { inputs: [] }
             : requestType === 'GetVirtualCamStatus' ? { outputActive: virtualCameraActive }
               : requestType === 'GetCurrentProgramScene' ? { currentProgramSceneName: currentProgramScene }
@@ -184,7 +184,7 @@ describe('ObsService', () => {
       await expect(adapter.getVirtualCameraActive()).resolves.toBe(true);
       await adapter.stopVirtualCamera();
       await expect(adapter.getVirtualCameraActive()).resolves.toBe(false);
-      expect(requests).toEqual(['GetSceneList', 'GetInputList', 'CreateScene', 'CreateInput', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetCurrentProgramScene', 'StartVirtualCam', 'GetVirtualCamStatus', 'StopVirtualCam', 'GetVirtualCamStatus']);
+      expect(requests).toEqual(['GetSceneList', 'GetInputList', 'CreateScene', 'CreateInput', 'GetSceneList', 'SetCurrentProgramScene', 'GetSceneList', 'StartVirtualCam', 'GetVirtualCamStatus', 'StopVirtualCam', 'GetVirtualCamStatus']);
       await adapter.disconnect();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

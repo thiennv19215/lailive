@@ -2,6 +2,29 @@
 
 Updated: 2026-08-01
 
+## Session update - full-canvas OBS realtime synchronization
+
+- Fixed the Studio-to-OBS contract so every authored scene edit is published immediately through Scene Runtime in addition to the existing debounced project autosave. Layer changes, transforms, visibility, ordering, source changes, and media-reference replacements now reach the Browser Source without requiring reconnect or manual refresh.
+- Corrected Browser Source composition geometry to match the Studio canvas: video/GIF, text, primary background, secondary image, opacity, transform, fit, visibility, and front-to-back ordering now use the same layer boxes rather than expanding every media layer to the full OBS frame.
+- Removed stale local-media behavior by versioning Browser Source asset URLs from the current media path, serving runtime/assets with `no-store`, and pressing OBS Browser Source `refreshnocache` whenever an existing managed output is updated. Replacing a video under the same layer/source ID now rebuilds the media element and stops the prior source.
+- Validation passes: 18 focused OBS/Scene Runtime/Studio preview tests, focused ESLint, `pnpm typecheck`, and `git diff --check`. Browser Source smoke passes with `SCENE_RUNTIME_SMOKE_OK propagation=142ms visualDiff=2.02%`; the installed OBS instance also accepts the real refresh command (`OBS_BROWSER_REFRESH_OK`).
+- Runtime note: restart the Electron app once so its main-process Scene Runtime cache policy and OBS update path are both loaded, then use `Kết nối OBS` to refresh the existing managed Browser Source.
+
+## Session update - OBS show-output crash recovery
+
+- Diagnosed the visible `obs:show-output` / `OBS_RESPONSE_TIMEOUT` failure against the installed OBS 32.2.1 instance. The OBS crash dump records `obs-websocket.dll!RequestHandler::GetCurrentProgramScene`, confirming that OBS closed before replying and the app's timeout hid the real disconnect.
+- Replaced the crash-triggering `GetCurrentProgramScene` request with the equivalent `currentProgramSceneName` returned by `GetSceneList`. The WebSocket client now rejects pending operations immediately when OBS closes, and `showOutput` resets the service to a disconnected state after a failed scene activation.
+- Added Vietnamese recovery messages for a closed OBS connection and a genuine response timeout. Updated the authenticated protocol expectation so the regression suite locks in the safe request path.
+- Validation passes: 8 focused OBS service tests (the repository test matcher also found three existing `.claude/worktrees` copies, 32/32 total), focused ESLint, `pnpm typecheck`, and `git diff --check`. A read-only authenticated probe against the running OBS instance passes: `OBS_GET_SCENE_LIST_OK current=AI Livestream scenes=1`.
+- Runtime note: the already-running Electron main process must be restarted once to load the main-process OBS fix; normal renderer HMR alone does not replace this service instance.
+
+## Session update - direct OBS controls restored in Studio
+
+- Restored the product-facing OBS workflow so operators no longer need DevTools or Console commands. Project Studio now loads the saved OBS configuration/status, exposes WebSocket host/port/session-password, scene/source, resolution, and FPS fields, and provides UI actions for connection testing, Browser Source creation/update, disconnect, and canvas-size synchronization.
+- The Studio output card now shows `OFFLINE`, `OBS`, `CONNECTED`, or `CAM ON`, supports one-click OBS output preparation, and starts/stops Virtual Camera when the installed OBS instance exposes it. Connection failures, ownership conflicts, missing passwords, timeouts, and unavailable virtual-camera drivers produce actionable Vietnamese messages.
+- New installations default to the real loopback `obs-websocket` adapter on `127.0.0.1:4455`; mock remains an explicit testing choice. Passwords remain session-only and are not returned through IPC or persisted.
+- Validation passes: `pnpm typecheck`, focused ESLint, OBS service tests, and `pnpm test:obs-smoke` (`OBS_SMOKE_OK kind=mock cycles=6 reconnect=ok`). The smoke exercises the restored settings controls, Browser Source output, six camera cycles, disconnect, and reconnect through the renderer/preload/main boundary.
+
 ## Session update - local video import and preview
 
 - Project Studio's `Thêm video` now opens the native local video picker, stores a typed media reference, creates a named video layer, and selects it immediately.

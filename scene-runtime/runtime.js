@@ -25,8 +25,24 @@ function mediaKind(layer, scene = currentState?.scene) {
   return layer.kind === 'audio' ? 'audio' : layer.kind === 'video' ? 'video' : 'image';
 }
 
+function mediaReference(layer, scene) {
+  if (layer.source.type !== 'media' || !layer.source.mediaReferenceId) return null;
+  return scene.mediaReferences.find((reference) => reference.id === layer.source.mediaReferenceId) ?? null;
+}
+
+function stableHash(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function sourceSignature(layer, scene) {
-  return `${layer.kind}:${mediaKind(layer, scene)}:${layer.source.type}:${layer.source.assetId ?? ''}:${layer.source.mediaReferenceId ?? ''}`;
+  const reference = mediaReference(layer, scene);
+  const sourceVersion = reference ? stableHash(`${reference.path}:${reference.kind}`) : '';
+  return `${layer.kind}:${mediaKind(layer, scene)}:${layer.source.type}:${layer.source.assetId ?? ''}:${layer.source.mediaReferenceId ?? ''}:${sourceVersion}`;
 }
 
 function isRenderable(layer) {
@@ -43,7 +59,7 @@ function createLayerNode(layer, state) {
   if (layer.kind !== 'text' && sourceId) {
     const renderedKind = mediaKind(layer, state.scene);
     const media = document.createElement(renderedKind === 'video' ? 'video' : renderedKind === 'audio' ? 'audio' : 'img');
-    media.src = `/assets/${encodeURIComponent(sourceId)}`;
+    media.src = `/assets/${encodeURIComponent(sourceId)}?v=${encodeURIComponent(sourceSignature(layer, state.scene))}`;
     media.dataset.media = 'source';
     if (media instanceof HTMLMediaElement) {
       media.autoplay = true;
@@ -61,11 +77,17 @@ function createLayerNode(layer, state) {
   return root;
 }
 
-function updateLayerNode(root, layer, index, state) {
+function layerBox(layer, imageIndex) {
+  if (layer.kind === 'audio') return { left: 0, top: 0, width: 0.1, height: 0.1 };
+  if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
+  if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
+  if (imageIndex === 1) return { left: 8, top: 57, width: 84, height: 24 };
+  return { left: 0, top: 0, width: 100, height: 100 };
+}
+
+function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
-  const box = layer.kind === 'audio'
-    ? { left: 0, top: 0, width: 0.1, height: 0.1 }
-    : isText ? { left: 8, top: 10, width: 84, height: 12 } : { left: 0, top: 0, width: 100, height: 100 };
+  const box = layerBox(layer, imageIndex);
   const speechVisible = layer.kind !== 'avatar' || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
   const presentation = state.presentation ?? { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
   const managed = presentation.managedLayerIds.includes(layer.id);
@@ -221,6 +243,7 @@ function render(state) {
       layerNodes.delete(id);
     }
   }
+  const imageLayers = state.scene.layers.filter((layer) => isRenderable(layer) && (layer.kind === 'image' || layer.kind === 'avatar'));
   state.scene.layers.forEach((layer, index) => {
     if (!isRenderable(layer)) return;
     let node = layerNodes.get(layer.id);
@@ -230,7 +253,7 @@ function render(state) {
       node = replacement;
       layerNodes.set(layer.id, node);
     }
-    updateLayerNode(node, layer, index, state);
+    updateLayerNode(node, layer, index, imageLayers.indexOf(layer), state);
     sceneElement.append(node);
   });
   refreshChroma();

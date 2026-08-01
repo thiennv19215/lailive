@@ -143,14 +143,14 @@ export class SceneRuntimeService {
     response.write(`id: ${event.revision}\nevent: scene\ndata: ${JSON.stringify(event)}\n\n`);
   }
 
-  private serveFile(response: ServerResponse, filePath: string): void {
+  private serveFile(response: ServerResponse, filePath: string, cacheControl?: string): void {
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       json(response, 404, { error: 'Not found.' });
       return;
     }
     response.writeHead(200, {
       'content-type': CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream',
-      'cache-control': filePath.endsWith('.html') ? 'no-store' : 'public, max-age=3600',
+      'cache-control': cacheControl ?? (filePath.endsWith('.html') ? 'no-store' : 'public, max-age=3600'),
       'x-content-type-options': 'nosniff',
     });
     fs.createReadStream(filePath).pipe(response);
@@ -159,16 +159,16 @@ export class SceneRuntimeService {
   private async handleRequest(request: http.IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       const url = new URL(request.url ?? '/', `http://${HOST}`);
-      if (request.method === 'GET' && url.pathname === '/') return this.serveFile(response, path.join(this.options.rendererDirectory, 'index.html'));
-      if (request.method === 'GET' && url.pathname === '/runtime.js') return this.serveFile(response, path.join(this.options.rendererDirectory, 'runtime.js'));
-      if (request.method === 'GET' && url.pathname === '/runtime.css') return this.serveFile(response, path.join(this.options.rendererDirectory, 'runtime.css'));
+      if (request.method === 'GET' && url.pathname === '/') return this.serveFile(response, path.join(this.options.rendererDirectory, 'index.html'), 'no-store');
+      if (request.method === 'GET' && url.pathname === '/runtime.js') return this.serveFile(response, path.join(this.options.rendererDirectory, 'runtime.js'), 'no-store');
+      if (request.method === 'GET' && url.pathname === '/runtime.css') return this.serveFile(response, path.join(this.options.rendererDirectory, 'runtime.css'), 'no-store');
       if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, this.getStatus());
       if (request.method === 'GET' && url.pathname.startsWith('/assets/')) {
         const assetId = decodeURIComponent(url.pathname.slice('/assets/'.length));
         const builtinPath = this.options.assets[assetId as ProjectLayerAssetId];
         const mediaPath = this.state?.scene.mediaReferences.find((reference) => reference.id === assetId)?.path;
         const assetPath = builtinPath ?? mediaPath;
-        return assetPath ? this.serveFile(response, assetPath) : json(response, 404, { error: 'Unknown asset ID.' });
+        return assetPath ? this.serveFile(response, assetPath, 'no-store') : json(response, 404, { error: 'Unknown asset ID.' });
       }
       if (request.method === 'GET' && url.pathname === '/events') {
         response.writeHead(200, {
