@@ -2,6 +2,12 @@
 
 Updated: 2026-08-01
 
+## Session update - dynamic Studio canvas layers
+
+- Removed the remaining hardcoded canvas dependency for the main preview: image visibility/source, text overlay visibility, and empty-state pseudo layers now follow the current scene layer collection.
+- Reordering the top image layer changes the preview source; deleting image/text layers removes their corresponding visual content instead of leaving a static poster behind.
+- Validation passes: focused Studio inspector smoke, `pnpm typecheck`, and focused Studio ESLint.
+
 ## Session update - orphan media notice fix
 
 - Missing-media warning now ignores orphaned references that are not attached to any scene layer, preventing stale UUID/path entries from covering Project Studio.
