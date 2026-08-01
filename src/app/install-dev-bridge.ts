@@ -278,6 +278,7 @@ export function installDevBridge(): void {
     media: {
       check: async (references) => projectMediaCheckSchema.parse({ references }).references.map((reference) => ({ ...reference, exists: false })),
       pick: async () => null,
+      read: async () => null,
     },
     live: {
       getSnapshot: async () => globalThis.structuredClone(liveSnapshot),

@@ -36,6 +36,7 @@ const api: DesktopApi = {
   media: {
     check: (references) => ipcRenderer.invoke(IPC_CHANNELS.mediaCheck, { references }),
     pick: (kind, label) => ipcRenderer.invoke(IPC_CHANNELS.mediaPick, { kind, label }),
+    read: (reference) => ipcRenderer.invoke(IPC_CHANNELS.mediaRead, reference),
   },
   live: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.liveGetSnapshot),

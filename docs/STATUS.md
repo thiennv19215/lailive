@@ -2,6 +2,12 @@
 
 Updated: 2026-08-01
 
+## Session update - local video import and preview
+
+- Project Studio's `Thêm video` now opens the native local video picker, stores a typed media reference, creates a named video layer, and selects it immediately.
+- Selected local videos render in the canvas through a narrow IPC media-read method and are restored on project reload; files over 100MB are rejected from preview loading.
+- Validation passes: Electron smoke, Studio inspector smoke, `pnpm typecheck`, and focused ESLint for the changed IPC/media files.
+
 ## Session update - per-layer canvas hit testing
 
 - Project Studio now creates a hit target for every scene layer, with separate visual regions for text, GIF, secondary image, avatar, and background layers.

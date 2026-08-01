@@ -76,9 +76,9 @@ type TransformInteraction = {
 };
 
 let layerSequence = 0;
-function createLayer(name: string, kind: LayerKind): StudioLayer {
+function createLayer(name: string, kind: LayerKind, source?: ProjectSceneLayer['source']): StudioLayer {
   layerSequence += 1;
-  return createProjectSceneLayer(`layer-${layerSequence}`, name, kind);
+  return createProjectSceneLayer(`layer-${layerSequence}`, name, kind, source);
 }
 
 const activeTool = ref<ToolName>('Avatar');
@@ -131,6 +131,7 @@ const avatarHistoryFuture = ref<string[][]>([]);
 let imageEditSnapshot: number | null = null;
 const avatarScripts = ref(['']);
 const mediaReferences = ref<ProjectMediaReference[]>([]);
+const videoSources = ref<Record<string, string>>({});
 const mediaStatuses = ref<ProjectMediaStatus[]>([]);
 const pendingAvatarMedia = ref<ProjectMediaReference | null>(null);
 const pinManagerState = ref<'closed' | 'checking' | 'login-required'>('closed');
@@ -287,6 +288,7 @@ onMounted(async () => {
     projectLoaded.value = true;
     autosaveStatus.value = 'saved';
     await refreshMediaStatus();
+    await loadVideoSources();
   }
   else notice.value = 'Không tìm thấy dữ liệu dự án local; đang mở scene mock an toàn.';
   await nextTick();
@@ -340,6 +342,28 @@ function addLayer(label: string = activeTool.value): void {
   notice.value = `Đã thêm ${label.toLowerCase()} vào canvas.`;
 }
 
+async function addLocalVideo(): Promise<void> {
+  const reference = await globalThis.window.desktopApi.media.pick('video', 'Thêm video');
+  if (!reference) {
+    notice.value = 'Chưa chọn video local.';
+    return;
+  }
+  const dataUrl = await globalThis.window.desktopApi.media.read(reference);
+  mediaReferences.value.push(reference);
+  const layer = createLayer(reference.label, 'video', { type: 'media', assetId: null, mediaReferenceId: reference.id });
+  layers.value.push(layer);
+  activeLayerIndex.value = layers.value.length - 1;
+  if (dataUrl) videoSources.value = { ...videoSources.value, [reference.id]: dataUrl };
+  await refreshMediaStatus();
+  notice.value = `Đã thêm video ${reference.label} vào canvas.`;
+}
+
+async function loadVideoSources(): Promise<void> {
+  const entries = await Promise.all(mediaReferences.value.filter((reference) => reference.kind === 'video').map(async (reference) => [reference.id, await globalThis.window.desktopApi.media.read(reference)] as const));
+  const loaded = Object.fromEntries(entries.filter((entry): entry is [string, string] => Boolean(entry[1])));
+  if (Object.keys(loaded).length) videoSources.value = { ...videoSources.value, ...loaded };
+}
+
 function clonePlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(toRaw(value))) as T;
 }
@@ -364,7 +388,7 @@ function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string,
   const imageIndex = layers.value.filter((candidate) => candidate.kind === 'image' || candidate.kind === 'avatar').indexOf(layer);
   const box = layer.kind === 'text'
     ? { left: 8, top: 7, width: 84, height: 18 }
-    : layer.kind === 'gif'
+    : layer.kind === 'gif' || layer.kind === 'video'
       ? { left: 10, top: 30, width: 80, height: 30 }
       : imageIndex === 1
         ? { left: 8, top: 57, width: 84, height: 24 }
@@ -753,7 +777,7 @@ function selectVoice(option: string): void {
 
         <template v-else-if="activeTool === 'Video'">
           <div class="subtabs"><button v-for="category in videoCategories" :key="category" type="button" :class="{ active: videoCategory === category }" @click="videoCategory = category">{{ category }}</button></div>
-          <button class="wide-primary compact" type="button" @click="addLayer('Video')"><Plus :size="17" />Thêm video</button>
+          <button class="wide-primary compact" type="button" @click="addLocalVideo"><Plus :size="17" />Thêm video</button>
           <div class="video-assets"><button type="button" aria-label="Flower GIF" @click="addLayer('Flower GIF')"><span class="video-thumb"><Video :size="24" /></span><strong>Flower GIF</strong></button><button type="button" @click="addLayer('Video - airpods')"><span class="video-thumb"><Video :size="24" /></span><strong>airpods</strong></button><button type="button" @click="addLayer('Video - water-glass')"><span class="video-thumb blue"><Video :size="24" /></span><strong>water-glass</strong></button></div>
         </template>
 
@@ -782,6 +806,7 @@ function selectVoice(option: string): void {
         <div ref="scenePosterElement" class="scene-poster live-frame scene-poster--perfume" :class="{ 'has-authored-scene': hasAuthoredScene, 'has-image-layer': hasImageLayer, 'has-text-layer': hasTextLayer }">
           <img v-if="previewImageLayer" :src="previewImageLayer.source" alt="Scene preview" :style="sceneMediaStyle" @pointerdown.stop="selectLayer(previewImageLayer.layer.id)" />
           <div v-for="layer in layers.filter((candidate) => candidate.kind === 'gif')" :key="`preview-gif-${layer.id}`" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
+          <video v-for="layer in layers.filter((candidate) => candidate.kind === 'video' && candidate.source.mediaReferenceId && videoSources[candidate.source.mediaReferenceId])" :key="`preview-video-${layer.id}`" class="scene-runtime-layer scene-runtime-media scene-local-video" :src="videoSources[layer.source.mediaReferenceId!]" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" autoplay muted loop playsinline @pointerdown.stop="selectLayer(layer.id)" />
           <div v-if="hasTextLayer" class="scene-copy" @pointerdown.stop="selectLayer(layers.find((layer) => layer.kind === 'text')?.id ?? '')"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
           <div v-for="layer in layers" :key="`preview-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
           <template v-if="activeLayer">

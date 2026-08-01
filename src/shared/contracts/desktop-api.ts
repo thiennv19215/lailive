@@ -40,6 +40,7 @@ export interface DesktopApi {
   media: {
     check(references: ProjectMediaReference[]): Promise<ProjectMediaStatus[]>;
     pick(kind: ProjectMediaKind, label: string): Promise<ProjectMediaReference | null>;
+    read(reference: ProjectMediaReference): Promise<string | null>;
   };
   live: {
     getSnapshot(): Promise<LiveSessionSnapshot>;

@@ -21,6 +21,7 @@ export const IPC_CHANNELS = {
   projectsDelete: 'projects:delete',
   mediaCheck: 'media:check',
   mediaPick: 'media:pick',
+  mediaRead: 'media:read',
   liveGetSnapshot: 'live:get-snapshot',
   liveProbe: 'live:probe',
   liveConnect: 'live:connect',
