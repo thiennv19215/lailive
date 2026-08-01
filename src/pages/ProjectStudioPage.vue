@@ -196,7 +196,14 @@ const pinManagerStatus = computed(() => {
 const activeLayer = computed(() => (
   activeLayerIndex.value === null ? null : layers.value[activeLayerIndex.value] ?? null
 ));
-const missingMedia = computed(() => mediaStatuses.value.filter((reference) => !reference.exists));
+const missingMedia = computed(() => {
+  const usedReferenceIds = new Set(
+    layers.value
+      .map((layer) => layer.source.mediaReferenceId)
+      .filter((referenceId): referenceId is string => Boolean(referenceId)),
+  );
+  return mediaStatuses.value.filter((reference) => !reference.exists && usedReferenceIds.has(reference.id));
+});
 const hasAuthoredScene = computed(() => layers.value.some((layer) => layer.source.type === 'builtin' || layer.source.type === 'media'));
 
 const activeTransform = computed(() => activeLayer.value?.transform ?? DEFAULT_LAYER_TRANSFORM);

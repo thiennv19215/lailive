@@ -2,6 +2,12 @@
 
 Updated: 2026-08-01
 
+## Session update - orphan media notice fix
+
+- Missing-media warning now ignores orphaned references that are not attached to any scene layer, preventing stale UUID/path entries from covering Project Studio.
+- The remaining warning still appears for a genuinely missing file used by a layer, with bounded wrapping and repair controls.
+- Validation passes: `pnpm test:project-persistence-smoke`, `pnpm typecheck`, and focused Studio ESLint.
+
 ## Session update - Project Studio parity restoration
 
 - Restored the full reference-shaped Project Studio surface from the repository's internal source map, then adapted it to the current typed scene contracts without copying the read-only reference installation.
