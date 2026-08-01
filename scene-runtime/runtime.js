@@ -4,6 +4,8 @@ const statusElement = document.querySelector('#status');
 const clientId = `scene-${crypto.randomUUID()}`;
 const layerNodes = new Map();
 let currentState = null;
+let lastServerRevision = 0;
+let lastPlaybackRevision = -1;
 let chromaFrame = null;
 let lastChromaFrameAt = 0;
 
@@ -65,7 +67,7 @@ function updateLayerNode(root, layer, index, state) {
     ? { left: 0, top: 0, width: 0.1, height: 0.1 }
     : isText ? { left: 8, top: 10, width: 84, height: 12 } : { left: 0, top: 0, width: 100, height: 100 };
   const speechVisible = layer.kind !== 'avatar' || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
-  const presentation = state.presentation ?? { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0 };
+  const presentation = state.presentation ?? { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
   const managed = presentation.managedLayerIds.includes(layer.id);
   const presentationVisible = !managed || presentation.activeLayerId === layer.id;
   const renderedKind = mediaKind(layer, state.scene);
@@ -92,9 +94,10 @@ function updateLayerNode(root, layer, index, state) {
       media.style.objectFit = layer.fitMode;
       media.style.borderRadius = layer.kind === 'image' ? `${state.scene.imageSettings.radius}px` : '0';
       if (media instanceof HTMLMediaElement) {
-        media.loop = managed ? false : layer.loop;
-        media.muted = layer.muted;
-        media.volume = layer.volume;
+        const active = managed && presentation.activeLayerId === layer.id;
+        media.loop = managed ? (active ? presentation.activeLoop : false) : layer.loop;
+        media.muted = active ? presentation.activeMuted : layer.muted;
+        media.volume = active ? presentation.activeVolume : layer.volume;
         const revision = String(presentation.playbackRevision);
         const speechManaged = layer.kind === 'avatar' && layer.avatarState !== 'none';
         if (speechManaged && !speechVisible) {
@@ -105,14 +108,14 @@ function updateLayerNode(root, layer, index, state) {
           media.dataset.speechActive = 'true';
           media.loop = true;
           void media.play().catch(() => undefined);
-        } else if (managed && (!presentationVisible || presentation.mode === 'paused')) {
+        } else if (managed && (!presentationVisible || presentation.mode === 'paused' || presentation.activePaused || !active)) {
           media.pause();
         } else {
           if (managed && media.dataset.playbackRevision !== revision) {
             media.dataset.playbackRevision = revision;
             media.currentTime = 0;
           }
-          void media.play().catch(() => undefined);
+          void media.play().catch((error) => report('warn', error instanceof Error ? error.message : error));
         }
       }
     }
@@ -238,6 +241,10 @@ const events = new EventSource(`/events?clientId=${encodeURIComponent(clientId)}
 events.addEventListener('scene', (event) => {
   try {
     const payload = JSON.parse(event.data);
+    const playbackRevision = payload.state?.presentation?.playbackRevision ?? 0;
+    if (payload.revision <= lastServerRevision || playbackRevision < lastPlaybackRevision) return;
+    lastServerRevision = payload.revision;
+    lastPlaybackRevision = playbackRevision;
     render(payload.state);
   } catch (error) {
     report('error', error instanceof Error ? error.message : error);

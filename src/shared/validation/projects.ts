@@ -110,15 +110,17 @@ export const projectLivestreamSettingsSchema = z.object({
     'Each trigger event must appear exactly once.',
   ),
 });
+export const projectManualPlaybackItemSchema = z.object({
+  layerId: projectIdSchema,
+  enabled: z.boolean(),
+});
 export const projectManualPlaybackSettingsSchema = z.object({
   enabled: z.boolean(),
-  idleLayerIds: z.array(projectIdSchema).max(20).refine((ids) => new Set(ids).size === ids.length, 'Idle script layer IDs must be unique.'),
-  responseLayerIds: z.array(projectIdSchema).max(20).refine((ids) => new Set(ids).size === ids.length, 'Response layer IDs must be unique.'),
-  selectedResponseLayerId: projectIdSchema.nullable(),
-}).refine(
-  (settings) => settings.selectedResponseLayerId === null || settings.responseLayerIds.includes(settings.selectedResponseLayerId),
-  'Selected response layer must be in the response list.',
-);
+  playlist: z.array(projectManualPlaybackItemSchema).max(20).refine(
+    (items) => new Set(items.map((item) => item.layerId)).size === items.length,
+    'Playlist layer IDs must be unique.',
+  ),
+});
 export const projectSceneSchema = z.object({
   schemaVersion: z.literal(PROJECT_SCHEMA_VERSION),
   canvasPreset: z.enum(['portrait-1080p', 'landscape-1080p']),
@@ -180,6 +182,18 @@ export const projectExportEnvelopeSchema = z.object({
   }),
 }));
 
+function migrateManualPlaybackSettings(
+  value: unknown,
+  fallback: ProjectSceneDocument['manualPlaybackSettings'],
+): ProjectSceneDocument['manualPlaybackSettings'] {
+  const current = projectManualPlaybackSettingsSchema.safeParse(value);
+  if (current.success) return current.data;
+  if (!value || typeof value !== 'object') return fallback;
+  const legacy = value as Record<string, unknown>;
+  const idleLayerIds = z.array(projectIdSchema).max(20).catch([]).parse(legacy.idleLayerIds);
+  return { enabled: Boolean(legacy.enabled), playlist: idleLayerIds.map((layerId) => ({ layerId, enabled: true })) };
+}
+
 export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
   const current = projectSceneSchema.safeParse(scene);
   if (current.success) return current.data;
@@ -233,7 +247,8 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
       ...sourceLivestream,
       triggers: migratedTriggers,
     }),
-    manualPlaybackSettings: projectManualPlaybackSettingsSchema.catch(defaults.manualPlaybackSettings).parse(source.manualPlaybackSettings),
+    manualPlaybackSettings: migrateManualPlaybackSettings(source.manualPlaybackSettings, defaults.manualPlaybackSettings),
+
     aiSettings: aiReplySettingsSchema.catch(defaults.aiSettings).parse(source.aiSettings),
     ttsSettings: ttsProjectSettingsSchema.catch(defaults.ttsSettings).parse(source.ttsSettings),
     products: productCatalogSchema.catch(defaults.products).parse(source.products),

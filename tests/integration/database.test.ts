@@ -51,7 +51,7 @@ describe('SettingsDatabase', () => {
         { id: 'media-avatar', label: 'Avatar test', kind: 'video', path: path.join(directory, 'missing-avatar.mp4') },
         { id: 'audio-reply-file', label: 'Audio reply', kind: 'audio', path: path.join(directory, 'missing-reply.mp3') },
       ],
-      manualPlaybackSettings: { enabled: true, idleLayerIds: ['video-idle'], responseLayerIds: ['audio-reply'], selectedResponseLayerId: 'audio-reply' },
+      manualPlaybackSettings: { enabled: true, playlist: [{ layerId: 'video-idle', enabled: true }, { layerId: 'audio-reply', enabled: true }] },
       layers: [
         { ...createProjectSceneLayer('layer-saved', 'Saved text', 'text'), transform: { ...DEFAULT_LAYER_TRANSFORM, x: 12 } },
         createProjectSceneLayer('video-idle', 'Idle R1', 'video', { type: 'builtin', assetId: 'flower-video', mediaReferenceId: null }),
@@ -77,7 +77,7 @@ describe('SettingsDatabase', () => {
     expect(second.getProject(created.id)?.scene.imageSettings.radius).toBe(24);
     expect(second.getProject(created.id)?.scene.avatarSettings.scripts).toEqual(['Persisted avatar script']);
     expect(second.getProject(created.id)?.scene.livestreamSettings.tiktokUsername).toBe('studio_test');
-    expect(second.getProject(created.id)?.scene.manualPlaybackSettings).toEqual({ enabled: true, idleLayerIds: ['video-idle'], responseLayerIds: ['audio-reply'], selectedResponseLayerId: 'audio-reply' });
+    expect(second.getProject(created.id)?.scene.manualPlaybackSettings).toEqual({ enabled: true, playlist: [{ layerId: 'video-idle', enabled: true }, { layerId: 'audio-reply', enabled: true }] });
     expect(second.getProject(created.id)?.scene.layers.find((layer) => layer.id === 'audio-reply')).toMatchObject({ kind: 'audio', volume: 0.65 });
     expect(second.getProject(created.id)?.scene.mediaReferences[0]?.id).toBe('media-avatar');
     expect(second.getProject(created.id)?.scene.textStyle.content).toBe('Đã tự động lưu');

@@ -17,7 +17,14 @@ The authoritative phase definitions and exit criteria are in `NEW_REPO_FULL_PLAN
 | 10 | OBS and virtual camera | In progress; mock/protocol workflow complete, real OBS/camera-consumer verification pending |
 | 11 | TikTok Shop and scheduler | In progress; rebuild foundation complete, authenticated reference/live verification pending |
 | 12 | Logs, diagnostics, resilience | In progress; diagnostics UI plus database, runtime-lock, and owned-browser recovery complete, broader lifecycle/long-run/reference work pending |
-| 13 | Full parity and long-run testing | Pending |
+| 13 | Full parity and long-run testing | In progress; prepared Video Room playlist slice implemented, real Electron/OBS and long-run evidence pending |
+
+## Prepared Video Room playback slice (2026-08-01)
+
+- Schema v12 stores an ordered, bounded playlist of enabled layer IDs; existing scene-layer loop/mute/volume fields remain canonical and v11 idle assignments migrate without restoring response behavior.
+- The renderer-owned controller now has stopped/starting/idle/paused/loading/recovering/error states, exact playback-revision ended guards, R1→R2→R3→R1 cycling, one-active-item semantics, bounded missing-media recovery, retry-to-R1, and session-only short-playlist/rotation warnings.
+- Studio uses typed video/audio media selection and stable managed media components; controller snapshots publish active layer, revision, pause, mute, volume, and loop to the loopback runtime. Browser Source accepts only newer server/playback revisions and pauses inactive managed media before activating one item.
+- Automated focused tests and a controller smoke pass. Native picker, repeated local AV playback, OBS monitoring, and a dedicated real Electron Browser Source smoke remain next evidence; no packaging or release work is included.
 | 14 | Portable release, only after parity approval | Deferred |
 
 ## Phase 2 exit record

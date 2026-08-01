@@ -17,7 +17,11 @@ const props = defineProps<{
   speechManaged?: boolean;
   speechActive?: boolean;
 }>();
-const emit = defineEmits<{ ended: [layerId: string, playbackRevision: number] }>();
+const emit = defineEmits<{
+  ended: [layerId: string, playbackRevision: number];
+  ready: [layerId: string, playbackRevision: number];
+  error: [layerId: string, playbackRevision: number, message: string];
+}>();
 
 const rootElement = ref<HTMLElement | null>(null);
 const imageElement = ref<HTMLImageElement | null>(null);
@@ -66,9 +70,14 @@ function syncMediaPlayback(): void {
   void media.play().catch(() => undefined);
 }
 
-function handleVideoLoaded(): void {
+function handleMediaReady(): void {
   refreshChromaRenderer();
   syncMediaPlayback();
+  if (props.playbackManaged && props.playbackActive) emit('ready', props.layer.id, props.playbackRevision ?? 0);
+}
+
+function handleMediaError(): void {
+  if (props.playbackManaged && props.playbackActive) emit('error', props.layer.id, props.playbackRevision ?? 0, `Không đọc được media “${props.layer.name}”.`);
 }
 
 function handleVideoEnded(): void {
@@ -148,8 +157,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="rootElement" class="scene-runtime-layer scene-runtime-media" :class="{ 'is-selected': selected, 'is-audio-source': mediaKind === 'audio' }" :data-runtime-layer-id="layer.id" :data-media-kind="mediaKind" :data-avatar-state="layer.kind === 'avatar' ? layer.avatarState : undefined" :style="renderStyle">
-    <video v-if="mediaKind === 'video'" ref="videoElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :style="{ objectFit: layer.fitMode }" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" playsinline preload="auto" @loadeddata="handleVideoLoaded" @ended="handleVideoEnded" />
-    <audio v-else-if="mediaKind === 'audio'" ref="audioElement" :src="sourceUrl" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" preload="auto" @loadeddata="syncMediaPlayback" @ended="handleVideoEnded" />
+    <video v-if="mediaKind === 'video'" ref="videoElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :style="{ objectFit: layer.fitMode }" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" playsinline preload="auto" @loadeddata="handleMediaReady" @error="handleMediaError" @ended="handleVideoEnded" />
+    <audio v-else-if="mediaKind === 'audio'" ref="audioElement" :src="sourceUrl" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" preload="auto" @loadeddata="handleMediaReady" @error="handleMediaError" @ended="handleVideoEnded" />
     <img v-else ref="imageElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :alt="layer.name" :style="{ objectFit: layer.fitMode }" @load="refreshChromaRenderer" />
     <canvas v-if="mediaKind !== 'audio'" ref="canvasElement" class="scene-chroma-canvas" :class="{ active: chromaEnabled }" aria-hidden="true" />
   </div>

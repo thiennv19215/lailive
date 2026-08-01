@@ -1,65 +1,71 @@
 import { describe, expect, it } from 'vitest';
 import { ManualVideoPlaybackController } from '../../src/modules/playback/manual-video-playback';
+import type { ProjectManualPlaybackSettings } from '../../src/shared/contracts/projects';
 
-const settings = {
-  enabled: true,
-  idleLayerIds: ['idle-r1', 'idle-r2', 'idle-r3'],
-  responseLayerIds: ['reply-1', 'reply-2'],
-  selectedResponseLayerId: 'reply-1',
-};
+const settings: ProjectManualPlaybackSettings = { enabled: true, playlist: [
+  { layerId: 'r1', enabled: true }, { layerId: 'r2', enabled: true }, { layerId: 'r3', enabled: true },
+] };
+const layers = ['r1', 'r2', 'r3'].map((id) => ({ id, kind: 'video' as const, loop: false, muted: false, volume: 1, available: true }));
 
-describe('ManualVideoPlaybackController', () => {
-  it('cycles idle scripts in order and loops back to R1', () => {
+describe('manual video playlist controller', () => {
+  it('cycles R1 to R2 to R3 to R1 and rejects stale revisions', () => {
     const controller = new ManualVideoPlaybackController();
-    controller.configure(settings, [...settings.idleLayerIds, ...settings.responseLayerIds]);
-    expect(controller.snapshot()).toMatchObject({ mode: 'idle', activeLayerId: 'idle-r1', idleIndex: 0 });
-
-    let snapshot = controller.snapshot();
-    controller.onEnded(snapshot.activeLayerId!, snapshot.playbackRevision);
-    expect(controller.snapshot()).toMatchObject({ mode: 'idle', activeLayerId: 'idle-r2', idleIndex: 1 });
-
-    snapshot = controller.snapshot();
-    controller.onEnded(snapshot.activeLayerId!, snapshot.playbackRevision);
-    snapshot = controller.snapshot();
-    controller.onEnded(snapshot.activeLayerId!, snapshot.playbackRevision);
-    expect(controller.snapshot()).toMatchObject({ mode: 'idle', activeLayerId: 'idle-r1', idleIndex: 0 });
+    controller.configure(settings, layers);
+    expect(controller.start()).toBe(true);
+    expect(controller.snapshot().activeLayerId).toBe('r1');
+    const firstRevision = controller.snapshot().playbackRevision;
+    expect(controller.onEnded('r1', firstRevision - 1)).toBe(false);
+    expect(controller.onEnded('r1', firstRevision)).toBe(true);
+    expect(controller.snapshot().activeLayerId).toBe('r2');
+    expect(controller.onReady('r2', controller.snapshot().playbackRevision)).toBe(true);
+    expect(controller.onEnded('r2', controller.snapshot().playbackRevision)).toBe(true);
+    expect(controller.onEnded('r3', controller.snapshot().playbackRevision)).toBe(true);
+    expect(controller.snapshot().activeLayerId).toBe('r1');
   });
 
-  it('interrupts idle playback for a manual reply and resumes the next script', () => {
+  it('supports pause, resume, skip, stop and exact stale-event guards', () => {
     const controller = new ManualVideoPlaybackController();
-    controller.configure(settings, [...settings.idleLayerIds, ...settings.responseLayerIds]);
-    expect(controller.enqueueReply('comment-1')).toBe(true);
-    expect(controller.snapshot()).toMatchObject({ mode: 'response', activeLayerId: 'reply-1', activeReplyEventId: 'comment-1', replyStates: { 'comment-1': 'playing' } });
-
-    const reply = controller.snapshot();
-    controller.onEnded(reply.activeLayerId!, reply.playbackRevision);
-    expect(controller.snapshot()).toMatchObject({ mode: 'idle', activeLayerId: 'idle-r2', replyStates: { 'comment-1': 'done' } });
-  });
-
-  it('queues repeated operator replies without overlapping videos', () => {
-    const controller = new ManualVideoPlaybackController();
-    controller.configure(settings, [...settings.idleLayerIds, ...settings.responseLayerIds]);
-    controller.enqueueReply('comment-1');
-    controller.enqueueReply('comment-2', 'reply-2');
-    expect(controller.snapshot()).toMatchObject({ activeReplyEventId: 'comment-1', queuedReplies: [{ eventId: 'comment-2', state: 'queued' }] });
-
-    const first = controller.snapshot();
-    controller.onEnded(first.activeLayerId!, first.playbackRevision);
-    expect(controller.snapshot()).toMatchObject({ mode: 'response', activeLayerId: 'reply-2', activeReplyEventId: 'comment-2' });
-  });
-
-  it('pauses, resumes from the beginning, skips, and rejects missing response videos', () => {
-    const controller = new ManualVideoPlaybackController();
-    controller.configure(settings, [...settings.idleLayerIds, ...settings.responseLayerIds]);
+    controller.configure(settings, layers);
+    controller.start();
     const revision = controller.snapshot().playbackRevision;
     expect(controller.pause()).toBe(true);
-    expect(controller.snapshot().mode).toBe('paused');
+    expect(controller.onEnded('r1', revision)).toBe(false);
     expect(controller.resume()).toBe(true);
-    expect(controller.snapshot().playbackRevision).toBeGreaterThan(revision);
+    expect(controller.onEnded('r1', revision)).toBe(false);
     expect(controller.skip()).toBe(true);
-    expect(controller.snapshot().activeLayerId).toBe('idle-r2');
+    expect(controller.snapshot().activeLayerId).toBe('r2');
+    expect(controller.stop()).toBe(true);
+    expect(controller.onEnded('r2', controller.snapshot().playbackRevision)).toBe(false);
+    expect(controller.snapshot().mode).toBe('stopped');
+  });
 
-    controller.configure({ ...settings, responseLayerIds: [], selectedResponseLayerId: null }, settings.idleLayerIds);
-    expect(controller.enqueueReply('comment-missing')).toBe(false);
+  it('skips unavailable items with bounded recovery and errors when all fail', () => {
+    const controller = new ManualVideoPlaybackController();
+    controller.configure(settings, layers);
+    controller.start();
+    const firstRevision = controller.snapshot().playbackRevision;
+    expect(controller.onError('r1', firstRevision, 'missing')).toBe(true);
+    expect(controller.snapshot().activeLayerId).toBe('r2');
+    const allInvalid = new ManualVideoPlaybackController();
+    allInvalid.configure(settings, layers.map((layer) => ({ ...layer, available: false })));
+    allInvalid.start();
+    expect(allInvalid.snapshot().mode).toBe('error');
+    expect(allInvalid.snapshot().errorMessage).toBeTruthy();
+  });
+
+  it('warns for a one-item playlist, propagates media settings, and disposes listeners', () => {
+    const controller = new ManualVideoPlaybackController();
+    const one = { id: 'one', kind: 'audio' as const, loop: true, muted: true, volume: 0.4, available: true };
+    controller.configure({ enabled: true, playlist: [{ layerId: 'one', enabled: true }] }, [one]);
+    let notifications = 0;
+    const unsubscribe = controller.subscribe(() => { notifications += 1; });
+    controller.start();
+    expect(controller.snapshot().warnings.length).toBeGreaterThan(0);
+    expect(controller.snapshot().activeSettings).toEqual({ loop: true, muted: true, volume: 0.4 });
+    unsubscribe();
+    controller.dispose();
+    const before = notifications;
+    controller.stop();
+    expect(notifications).toBe(before);
   });
 });

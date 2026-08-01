@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import http, { type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { projectSceneSchema } from '../../src/shared/validation/projects';
-import { sceneRuntimeLogSchema, sceneRuntimeReadySchema } from '../../src/shared/validation/scene-runtime';
+import { sceneRuntimeLogSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema } from '../../src/shared/validation/scene-runtime';
 import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimeState, type SceneRuntimeStatus } from '../../src/shared/contracts/scene-runtime';
 import type { ProjectLayerAssetId } from '../../src/shared/contracts/projects';
 import type { AvatarSpeechState } from '../../src/shared/contracts/queue';
@@ -90,7 +89,8 @@ export class SceneRuntimeService {
   }
 
   publish(scene: unknown, avatarState: AvatarSpeechState, presentation: ScenePresentationState = createDefaultScenePresentationState()): SceneRuntimeEvent {
-    const next: SceneRuntimeState = { scene: projectSceneSchema.parse(scene), avatarState, presentation: structuredClone(presentation) };
+    const parsed = sceneRuntimePublishSchema.parse({ scene, avatarState, presentation });
+    const next: SceneRuntimeState = { scene: parsed.scene, avatarState: parsed.avatarState, presentation: structuredClone(parsed.presentation) };
     const event: SceneRuntimeEvent = {
       kind: this.state ? 'patch' : 'snapshot',
       revision: ++this.revision,

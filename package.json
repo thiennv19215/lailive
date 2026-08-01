@@ -36,6 +36,7 @@
     "test:long-session-soak": "node scripts/run-long-session-soak.mjs",
     "test:active-work-restart": "node scripts/run-active-work-restart-smoke.mjs",
     "test:avatar-script-smoke": "node scripts/run-avatar-script-smoke.mjs",
+    "test:video-playlist-smoke": "node --experimental-strip-types scripts/run-video-playlist-smoke.mjs",
     "capture:ui": "node scripts/capture-ui-screenshots.mjs",
     "compare:ui": "node scripts/compare-ui-screenshots.mjs",
     "lint": "eslint . --max-warnings 0"

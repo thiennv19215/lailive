@@ -1,4 +1,4 @@
-export const PROJECT_SCHEMA_VERSION = 11 as const;
+export const PROJECT_SCHEMA_VERSION = 12 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -69,11 +69,14 @@ export interface ProjectLivestreamSettings {
   triggers: ProjectTriggerSetting[];
 }
 
+export interface ProjectManualPlaylistItem {
+  layerId: string;
+  enabled: boolean;
+}
+
 export interface ProjectManualPlaybackSettings {
   enabled: boolean;
-  idleLayerIds: string[];
-  responseLayerIds: string[];
-  selectedResponseLayerId: string | null;
+  playlist: ProjectManualPlaylistItem[];
 }
 
 export interface ProjectSceneLayer {
@@ -182,9 +185,7 @@ export function createEmptyScene(): ProjectSceneDocument {
     },
     manualPlaybackSettings: {
       enabled: false,
-      idleLayerIds: [],
-      responseLayerIds: [],
-      selectedResponseLayerId: null,
+      playlist: [],
     },
     aiSettings: createDefaultAiReplySettings(),
     ttsSettings: createDefaultTtsProjectSettings(),

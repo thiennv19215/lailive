@@ -2,14 +2,18 @@ import type { AvatarSpeechState } from './queue';
 import type { ProjectSceneDocument } from './projects';
 
 export interface ScenePresentationState {
-  mode: 'scene' | 'stopped' | 'idle' | 'response' | 'paused';
+  mode: 'scene' | 'stopped' | 'starting' | 'idle' | 'paused' | 'loading' | 'recovering' | 'error';
   activeLayerId: string | null;
   managedLayerIds: string[];
   playbackRevision: number;
+  activePaused: boolean;
+  activeMuted: boolean;
+  activeVolume: number;
+  activeLoop: boolean;
 }
 
 export function createDefaultScenePresentationState(): ScenePresentationState {
-  return { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0 };
+  return { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
 }
 
 export interface SceneRuntimeState {

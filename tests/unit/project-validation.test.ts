@@ -76,7 +76,7 @@ describe('project validation', () => {
     expect(migrated.ttsSettings.timeoutMs).toBe(120_000);
     expect(migrated.products).toEqual([]);
     expect(migrated.mediaReferences).toEqual([]);
-    expect(migrated.manualPlaybackSettings).toEqual({ enabled: false, idleLayerIds: [], responseLayerIds: [], selectedResponseLayerId: null });
+    expect(migrated.manualPlaybackSettings).toEqual({ enabled: false, playlist: [] });
     expect(migrated.canvasPreset).toBe('portrait-1080p');
   });
 
@@ -112,11 +112,11 @@ describe('project validation', () => {
         avatarState: 'none', chromaKey: { enabled: false, color: '#00ff00', tolerance: 24 },
         source: { type: 'media', assetId: null, mediaReferenceId: 'audio-script' },
       }],
-      manualPlaybackSettings: { enabled: true, idleLayerIds: ['audio-r1'], responseLayerIds: [], selectedResponseLayerId: null },
+      manualPlaybackSettings: { enabled: true, playlist: [{ layerId: 'audio-r1', enabled: true }] },
     });
 
     expect(migrated.layers[0]).toMatchObject({ kind: 'audio', volume: 1, muted: false });
-    expect(migrated.manualPlaybackSettings.idleLayerIds).toEqual(['audio-r1']);
+    expect(migrated.manualPlaybackSettings.playlist).toEqual([{ layerId: 'audio-r1', enabled: true }]);
     expect(projectSceneLayerSchema.safeParse({ ...migrated.layers[0], volume: 1.1 }).success).toBe(false);
   });
 

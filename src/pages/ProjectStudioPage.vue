@@ -53,7 +53,11 @@ import {
   type LayerTransform,
   type ResizeHandle,
 } from '../shared/studio/layer-transform';
+import { isPreviewRenderable, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
 import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type ProjectMediaReference, type ProjectMediaStatus, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
+import SceneMediaLayer from '../components/SceneMediaLayer.vue';
+import { ManualVideoPlaybackController, type ManualVideoPlaybackSnapshot } from '../modules/playback/manual-video-playback';
+import type { ScenePresentationState } from '../shared/contracts/scene-runtime';
 
 type ToolName = 'Avatar' | 'Hình nền' | 'Video' | 'Hình dán' | 'Văn bản';
 type DialogName = 'livestream' | 'export' | 'start' | null;
@@ -135,6 +139,12 @@ const videoSources = ref<Record<string, string>>({});
 const imageSources = ref<Record<string, string>>({});
 const mediaStatuses = ref<ProjectMediaStatus[]>([]);
 const pendingAvatarMedia = ref<ProjectMediaReference | null>(null);
+const audioSources = ref<Record<string, string>>({});
+const playlistSnapshot = ref<ManualVideoPlaybackSnapshot>({ mode: 'stopped', activeLayerId: null, activePlaylistIndex: null, playbackRevision: 0, attemptedLayerIds: [], sessionHistory: [], warnings: [], errorMessage: null, activeSettings: null });
+const playbackController = new ManualVideoPlaybackController();
+let unsubscribePlayback: (() => void) | null = null;
+let publishInFlight = false;
+let publishQueued = false;
 const pinManagerState = ref<'closed' | 'checking' | 'login-required'>('closed');
 let pinManagerTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let autosaveTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -206,21 +216,16 @@ const missingMedia = computed(() => {
   );
   return mediaStatuses.value.filter((reference) => !reference.exists && usedReferenceIds.has(reference.id));
 });
-const hasAuthoredScene = computed(() => layers.value.some((layer) => layer.source.type === 'builtin' || layer.source.type === 'media'));
-const hasImageLayer = computed(() => layers.value.some((layer) => layer.kind === 'image' || layer.kind === 'avatar'));
-const hasTextLayer = computed(() => layers.value.some((layer) => layer.kind === 'text'));
-const previewImageLayer = computed(() => {
-  const layer = layers.value.find((candidate) => candidate.kind === 'image' || candidate.kind === 'avatar');
-  if (!layer) return null;
-  const name = layer.name.toLowerCase();
-  const source = name.includes('10') ? beautyCream : name.includes('44') ? beautyStudio : name.includes('22') ? beautyModel : templateHost;
-  return { layer, source };
-});
-const previewLocalImageLayers = computed(() => layers.value.filter((layer) => (
-  layer.kind === 'image' &&
-  layer.source.mediaReferenceId &&
-  imageSources.value[layer.source.mediaReferenceId]
+const hasTextLayer = computed(() => layers.value.some((layer) => layer.kind === 'text' && layer.source.type === 'text'));
+const loadedPreviewMediaIds = computed(() => new Set([
+  ...Object.keys(imageSources.value),
+  ...Object.keys(videoSources.value),
+  ...Object.keys(audioSources.value),
+]));
+const previewRenderableLayers = computed(() => layers.value.filter((layer) => (
+  layer.kind !== 'audio' && isPreviewRenderable(layer, loadedPreviewMediaIds.value)
 )));
+const previewImageLayers = computed(() => previewRenderableLayers.value.filter((layer) => layer.kind === 'image' || layer.kind === 'avatar'));
 
 const activeTransform = computed(() => activeLayer.value?.transform ?? DEFAULT_LAYER_TRANSFORM);
 const activeSelectionBox = computed(() => activeLayer.value?.kind === 'text'
@@ -252,16 +257,19 @@ const sceneTextStyle = computed(() => ({
   transform: activeLayer.value?.kind === 'text' ? activeSceneTransform.value : undefined,
 }));
 
-const sceneMediaStyle = computed(() => ({
-  transform: previewImageLayer.value
-    ? `translate(${previewImageLayer.value.layer.transform.x}%, ${previewImageLayer.value.layer.transform.y}%) rotate(${previewImageLayer.value.layer.transform.rotation}deg) scale(${previewImageLayer.value.layer.transform.scaleX}, ${previewImageLayer.value.layer.transform.scaleY})`
-    : undefined,
-}));
 
 onBeforeUnmount(() => {
   if (pinManagerTimer !== null) globalThis.clearTimeout(pinManagerTimer);
   if (autosaveTimer !== null) globalThis.clearTimeout(autosaveTimer);
   stopLayerTransform();
+  unsubscribePlayback?.();
+  unsubscribePlayback = null;
+  playbackController.dispose();
+});
+
+unsubscribePlayback = playbackController.subscribe((snapshot) => {
+  playlistSnapshot.value = snapshot;
+  void publishPlayback(snapshot);
 });
 
 onMounted(async () => {
@@ -295,6 +303,8 @@ onMounted(async () => {
     autosaveStatus.value = 'saved';
     await refreshMediaStatus();
     await loadMediaSources();
+    syncPlaybackController();
+    await publishPlayback();
   }
   else notice.value = 'Không tìm thấy dữ liệu dự án local; đang mở scene mock an toàn.';
   await nextTick();
@@ -343,9 +353,37 @@ function addLayer(label: string = activeTool.value): void {
   const sourceName = label.includes(' - ') || label === 'Flower GIF' || ['FREESHIP', '-50%', 'LIVE ONLY', 'HOT DEAL'].includes(label)
     ? label
     : `${label} ${layers.value.length + 1}`;
-  layers.value.push(createLayer(sourceName, kind));
+  const builtinAsset = label === 'Flower GIF'
+    ? 'flower-gif' as const
+    : label.includes('Chinese Beauty Sale') || label.includes('Local presenter')
+      ? 'template-host' as const
+      : label.includes('Background - Product table')
+        ? 'beauty-studio' as const
+        : label === 'Hình nền'
+          ? 'beauty-cream' as const
+          : null;
+  const source = builtinAsset
+    ? { type: 'builtin' as const, assetId: builtinAsset, mediaReferenceId: null }
+    : kind === 'text'
+      ? { type: 'text' as const, assetId: null, mediaReferenceId: null }
+      : { type: 'none' as const, assetId: null, mediaReferenceId: null };
+  layers.value.push(createLayer(sourceName, kind, source));
+  if (builtinAsset) notice.value = `Đã thêm nguồn ${sourceName} vào canvas.`;
   activeLayerIndex.value = layers.value.length - 1;
   notice.value = `Đã thêm ${label.toLowerCase()} vào canvas.`;
+}
+
+async function addLocalAudio(): Promise<void> {
+  const reference = await globalThis.window.desktopApi.media.pick('audio', 'Thêm audio');
+  if (!reference) { notice.value = 'Chưa chọn audio local.'; return; }
+  const dataUrl = await globalThis.window.desktopApi.media.read(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference);
+  mediaReferences.value.push(reference);
+  const layer = createLayer(reference.label, 'audio', { type: 'media', assetId: null, mediaReferenceId: reference.id });
+  layers.value.push(layer);
+  activeLayerIndex.value = layers.value.length - 1;
+  if (dataUrl) audioSources.value = { ...audioSources.value, [reference.id]: dataUrl };
+  await refreshMediaStatus();
+  notice.value = `Đã thêm audio ${reference.label} vào canvas.`;
 }
 
 async function addLocalVideo(): Promise<void> {
@@ -354,7 +392,7 @@ async function addLocalVideo(): Promise<void> {
     notice.value = 'Chưa chọn video local.';
     return;
   }
-  const dataUrl = await globalThis.window.desktopApi.media.read(reference);
+  const dataUrl = await globalThis.window.desktopApi.media.read(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference);
   mediaReferences.value.push(reference);
   const layer = createLayer(reference.label, 'video', { type: 'media', assetId: null, mediaReferenceId: reference.id });
   layers.value.push(layer);
@@ -370,7 +408,7 @@ async function addLocalImage(): Promise<void> {
     notice.value = 'Chưa chọn ảnh local.';
     return;
   }
-  const dataUrl = await globalThis.window.desktopApi.media.read(reference);
+  const dataUrl = await globalThis.window.desktopApi.media.read(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference);
   mediaReferences.value.push(reference);
   const layer = createLayer(reference.label, 'image', { type: 'media', assetId: null, mediaReferenceId: reference.id });
   layers.value.push(layer);
@@ -382,17 +420,20 @@ async function addLocalImage(): Promise<void> {
 
 async function loadMediaSources(): Promise<void> {
   const entries = await Promise.all(mediaReferences.value
-    .filter((reference) => reference.kind === 'image' || reference.kind === 'video')
-    .map(async (reference) => [reference, await globalThis.window.desktopApi.media.read(reference)] as const));
+    .filter((reference) => reference.kind === 'image' || reference.kind === 'video' || reference.kind === 'audio')
+    .map(async (reference) => [reference, await globalThis.window.desktopApi.media.read(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference)] as const));
   const loadedImages: Record<string, string> = {};
   const loadedVideos: Record<string, string> = {};
+  const loadedAudio: Record<string, string> = {};
   for (const [reference, dataUrl] of entries) {
     if (!dataUrl) continue;
     if (reference.kind === 'image') loadedImages[reference.id] = dataUrl;
     if (reference.kind === 'video') loadedVideos[reference.id] = dataUrl;
+    if (reference.kind === 'audio') loadedAudio[reference.id] = dataUrl;
   }
   if (Object.keys(loadedImages).length) imageSources.value = { ...imageSources.value, ...loadedImages };
   if (Object.keys(loadedVideos).length) videoSources.value = { ...videoSources.value, ...loadedVideos };
+  if (Object.keys(loadedAudio).length) audioSources.value = { ...audioSources.value, ...loadedAudio };
 }
 
 function clonePlain<T>(value: T): T {
@@ -415,37 +456,38 @@ function selectLayer(layerId: string): void {
   if (index >= 0) activeLayerIndex.value = index;
 }
 
-function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string, string> {
-  const imageIndex = layers.value.filter((candidate) => candidate.kind === 'image' || candidate.kind === 'avatar').indexOf(layer);
-  const box = layer.kind === 'text'
-    ? { left: 8, top: 7, width: 84, height: 18 }
-    : layer.kind === 'gif' || layer.kind === 'video'
-      ? { left: 10, top: 30, width: 80, height: 30 }
-      : imageIndex === 1
-        ? { left: 8, top: 57, width: 84, height: 24 }
-        : { left: 0, top: 0, width: 100, height: 100 };
-  const transform = layer.transform;
-  const visualZ = layer.kind === 'text'
-    ? 300
-    : layer.kind === 'gif'
-      ? 250
-      : imageIndex === 1
-        ? 220
-        : layer.kind === 'avatar'
-          ? 200
-          : 100;
-  return {
-    left: `${box.left}%`,
-    top: `${box.top}%`,
-    width: `${box.width}%`,
-    height: `${box.height}%`,
-    zIndex: String(visualZ + layers.value.length - index),
-    transform: `translate(${(transform.x / box.width) * 100}%, ${(transform.y / box.height) * 100}%) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`,
-  };
+function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string, string | number> {
+  const imageIndex = previewImageLayers.value.indexOf(layer);
+  return { ...previewLayerStyle(layer, index, imageIndex) };
+}
+
+function previewMediaSource(layer: StudioLayer): string | null {
+  const source = resolvePreviewSource(layer, loadedPreviewMediaIds.value);
+  if (!source) return null;
+  if (source.type === 'builtin') {
+    if (source.assetId === 'beauty-model') return beautyModel;
+    if (source.assetId === 'beauty-studio') return beautyStudio;
+    if (source.assetId === 'beauty-cream') return beautyCream;
+    if (source.assetId === 'template-host') return templateHost;
+    if (source.assetId === 'flower-gif') return flowerGif;
+    return null;
+  }
+  return imageSources.value[source.mediaReferenceId]
+    ?? videoSources.value[source.mediaReferenceId]
+    ?? null;
+}
+
+function previewMediaObjectFit(layer: StudioLayer): string {
+  return layer.fitMode;
+}
+
+function previewMediaLayers(): StudioLayer[] {
+  return previewRenderableLayers.value.filter((layer) => layer.kind === 'video' || layer.kind === 'gif' || layer.kind === 'image' || layer.kind === 'avatar');
 }
 
 function buildSceneDocument(): ProjectSceneDocument {
   const base = clonePlain(persistedScene.value);
+  base.manualPlaybackSettings = clonePlain(persistedScene.value.manualPlaybackSettings);
   return {
     ...base,
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -476,9 +518,73 @@ function buildSceneDocument(): ProjectSceneDocument {
       productPinEnabled: productPinEnabled.value,
       triggers: triggers.value.map((trigger) => ({ event: trigger.event, enabled: trigger.enabled, actionType: 'voice_tts' as const })),
     },
+    manualPlaybackSettings: clonePlain(persistedScene.value.manualPlaybackSettings),
     mediaReferences: clonePlain(mediaReferences.value),
   };
 }
+
+function playlistItems() {
+  return persistedScene.value.manualPlaybackSettings.playlist;
+}
+
+function syncPlaybackController(): void {
+  playbackController.configure(
+    persistedScene.value.manualPlaybackSettings,
+    layers.value.filter((layer) => (layer.kind === 'video' || layer.kind === 'audio') && Boolean(layer.source.mediaReferenceId || layer.source.assetId)).map((layer) => ({
+      id: layer.id, kind: layer.kind, loop: layer.loop, muted: layer.muted, volume: layer.volume,
+      available: layer.source.type === 'builtin' || mediaStatuses.value.find((status) => status.id === layer.source.mediaReferenceId)?.exists !== false,
+    })),
+  );
+}
+
+function playbackPresentation(snapshot: ManualVideoPlaybackSnapshot): ScenePresentationState {
+  return {
+    mode: snapshot.mode,
+    activeLayerId: snapshot.activeLayerId,
+    managedLayerIds: playlistItems().map((item) => item.layerId),
+    playbackRevision: snapshot.playbackRevision,
+    activePaused: snapshot.mode === 'paused' || snapshot.mode === 'stopped' || snapshot.mode === 'error',
+    activeMuted: snapshot.activeSettings?.muted ?? true,
+    activeVolume: snapshot.activeSettings?.volume ?? 0,
+    activeLoop: snapshot.activeSettings?.loop ?? false,
+  };
+}
+
+async function publishPlayback(snapshot = playlistSnapshot.value): Promise<void> {
+  if (!projectLoaded.value) return;
+  if (publishInFlight) { publishQueued = true; return; }
+  publishInFlight = true;
+  try {
+    // IPC uses structured clone; strip every Vue proxy before crossing the boundary.
+    const scene = JSON.parse(JSON.stringify(buildSceneDocument())) as ProjectSceneDocument;
+    const presentation = JSON.parse(JSON.stringify(playbackPresentation(snapshot))) as ScenePresentationState;
+    await globalThis.window.desktopApi.sceneRuntime.publish(scene, 'idle', presentation);
+  } catch (error) {
+    notice.value = `Không đồng bộ Browser Source: ${error instanceof Error ? error.message : String(error)}`;
+  } finally { publishInFlight = false; if (publishQueued) { publishQueued = false; void publishPlayback(); } }
+}
+
+function assignPlaylist(layerId: string): void {
+  if (!layers.value.some((layer) => layer.id === layerId && (layer.kind === 'video' || layer.kind === 'audio'))) return;
+  if (playlistItems().some((item) => item.layerId === layerId)) return;
+  if (playlistItems().length >= 20) { notice.value = 'Playlist đã đủ 20 mục.'; return; }
+  persistedScene.value.manualPlaybackSettings.playlist.push({ layerId, enabled: true });
+  persistedScene.value.manualPlaybackSettings.enabled = true;
+  syncPlaybackController();
+}
+
+function removePlaylist(index: number): void { persistedScene.value.manualPlaybackSettings.playlist.splice(index, 1); syncPlaybackController(); }
+function movePlaylist(index: number, delta: number): void { const target = index + delta; if (target < 0 || target >= playlistItems().length) return; const items = playlistItems(); [items[index], items[target]] = [items[target]!, items[index]!]; syncPlaybackController(); }
+function togglePlaylistItem(index: number): void { const item = playlistItems()[index]; if (item) item.enabled = !item.enabled; syncPlaybackController(); }
+function togglePlaylist(): void { persistedScene.value.manualPlaybackSettings.enabled = !persistedScene.value.manualPlaybackSettings.enabled; syncPlaybackController(); }
+function playbackStart(): void { playbackController.start(); }
+function playbackPause(): void { playbackController.pause(); }
+function playbackResume(): void { playbackController.resume(); }
+function playbackSkip(): void { playbackController.skip(); }
+function playbackStop(): void { playbackController.stop(); }
+function playbackReady(layerId: string, revision: number): void { playbackController.onReady(layerId, revision); }
+function playbackEnded(layerId: string, revision: number): void { playbackController.onEnded(layerId, revision); }
+function playbackError(layerId: string, revision: number, message: string): void { playbackController.onError(layerId, revision, message); }
 
 async function saveSceneNow(): Promise<void> {
   if (!projectLoaded.value) return;
@@ -488,7 +594,8 @@ async function saveSceneNow(): Promise<void> {
   }
   autosaveStatus.value = 'saving';
   try {
-    await globalThis.window.desktopApi.projects.saveScene(String(route.params.projectId), buildSceneDocument());
+    const scene = JSON.parse(JSON.stringify(buildSceneDocument())) as ProjectSceneDocument;
+    await globalThis.window.desktopApi.projects.saveScene(String(route.params.projectId), scene);
     autosaveStatus.value = 'saved';
   } catch (error) {
     autosaveStatus.value = 'error';
@@ -656,7 +763,7 @@ async function saveAvatarMock(): Promise<void> {
 
 async function refreshMediaStatus(): Promise<void> {
   try {
-    mediaStatuses.value = await globalThis.window.desktopApi.media.check(mediaReferences.value);
+    mediaStatuses.value = await globalThis.window.desktopApi.media.check(JSON.parse(JSON.stringify(mediaReferences.value)) as ProjectMediaReference[]);
   } catch {
     mediaStatuses.value = mediaReferences.value.map((reference) => ({ ...reference, exists: false }));
   }
@@ -809,7 +916,7 @@ function selectVoice(option: string): void {
 
         <template v-else-if="activeTool === 'Video'">
           <div class="subtabs"><button v-for="category in videoCategories" :key="category" type="button" :class="{ active: videoCategory === category }" @click="videoCategory = category">{{ category }}</button></div>
-          <button class="wide-primary compact" type="button" @click="addLocalVideo"><Plus :size="17" />Thêm video</button>
+          <button class="wide-primary compact" type="button" @click="addLocalVideo"><Plus :size="17" />Thêm video từ máy</button><button class="wide-primary compact" type="button" @click="addLocalAudio"><Plus :size="17" />Thêm audio từ máy</button>
           <div class="video-assets"><button type="button" aria-label="Flower GIF" @click="addLayer('Flower GIF')"><span class="video-thumb"><Video :size="24" /></span><strong>Flower GIF</strong></button><button type="button" @click="addLayer('Video - airpods')"><span class="video-thumb"><Video :size="24" /></span><strong>airpods</strong></button><button type="button" @click="addLayer('Video - water-glass')"><span class="video-thumb blue"><Video :size="24" /></span><strong>water-glass</strong></button></div>
         </template>
 
@@ -830,18 +937,31 @@ function selectVoice(option: string): void {
           <li v-for="(layer, index) in layers" :key="layer.id" :data-layer-id="layer.id" :class="{ active: activeLayerIndex === index }" @click="activeLayerIndex = index"><UserRound v-if="layer.kind === 'avatar'" :size="14" /><Type v-else-if="layer.kind === 'text'" :size="14" /><Image v-else :size="14" /><span>{{ sourceDisplayName(layer) }}</span><button type="button" :aria-label="`Xóa ${layer.name}`" @click.stop="removeLayer(index)"><X :size="13" /></button></li>
         </ul>
       </section>
+      <section class="source-panel playlist-panel">
+        <header><strong>Playlist phát</strong><button type="button" class="switch" :class="{ on: persistedScene.manualPlaybackSettings.enabled }" :aria-pressed="persistedScene.manualPlaybackSettings.enabled" @click="togglePlaylist"><span /></button></header>
+        <div class="playlist-controls"><button type="button" :disabled="playlistSnapshot.mode !== 'stopped' && playlistSnapshot.mode !== 'error'" @click="playbackStart">Bắt đầu</button><button type="button" :disabled="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped'" @click="playbackPause">Tạm dừng</button><button type="button" :disabled="playlistSnapshot.mode !== 'paused'" @click="playbackResume">Tiếp tục</button><button type="button" :disabled="!playlistSnapshot.activeLayerId" @click="playbackSkip">Bỏ qua</button><button type="button" :disabled="playlistSnapshot.mode === 'stopped'" @click="playbackStop">Dừng</button></div>
+        <p class="playlist-state">{{ playlistSnapshot.mode }}<span v-if="playlistSnapshot.activeLayerId"> · R{{ (playlistSnapshot.activePlaylistIndex ?? 0) + 1 }}</span></p>
+        <p v-if="playlistSnapshot.warnings.length" class="playlist-warning">{{ playlistSnapshot.warnings[0] }}</p><p v-if="playlistSnapshot.errorMessage" class="playlist-error">{{ playlistSnapshot.errorMessage }} <button type="button" @click="playbackController.retry()">Thử lại</button></p>
+        <ol><li v-for="(item, index) in playlistItems()" :key="item.layerId"><span>R{{ index + 1 }} · {{ sourceDisplayName(layers.find((layer) => layer.id === item.layerId) ?? layers[0]!) }}</span><button type="button" @click="togglePlaylistItem(index)">{{ item.enabled ? 'Tắt' : 'Bật' }}</button><button type="button" :disabled="index === 0" @click="movePlaylist(index, -1)">↑</button><button type="button" :disabled="index === playlistItems().length - 1" @click="movePlaylist(index, 1)">↓</button><button type="button" @click="removePlaylist(index)">X</button></li></ol>
+        <div class="playlist-add-list"><button v-for="layer in layers.filter((candidate) => (candidate.kind === 'video' || candidate.kind === 'audio') && !playlistItems().some((item) => item.layerId === candidate.id))" :key="layer.id" type="button" @click="assignPlaylist(layer.id)">+ {{ sourceDisplayName(layer) }}</button></div>
+      </section>
     </div>
 
     <main class="studio-canvas-wrap">
       <div v-if="notice" class="studio-notice"><Check :size="14" />{{ notice }}<button type="button" aria-label="Đóng thông báo" @click="notice = ''"><X :size="13" /></button></div>
       <div class="studio-grid">
-        <div ref="scenePosterElement" class="scene-poster live-frame scene-poster--perfume" :class="{ 'has-authored-scene': hasAuthoredScene, 'has-image-layer': hasImageLayer, 'has-text-layer': hasTextLayer }">
-          <img v-if="previewImageLayer" :src="previewImageLayer.source" alt="Scene preview" :style="sceneMediaStyle" @pointerdown.stop="selectLayer(previewImageLayer.layer.id)" />
-          <div v-for="layer in layers.filter((candidate) => candidate.kind === 'gif')" :key="`preview-gif-${layer.id}`" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
-          <div v-for="layer in previewLocalImageLayers" :key="`preview-image-${layer.id}`" class="scene-runtime-layer scene-runtime-media scene-local-image" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="imageSources[layer.source.mediaReferenceId!]" :alt="layer.name" /></div>
-          <video v-for="layer in layers.filter((candidate) => candidate.kind === 'video' && candidate.source.mediaReferenceId && videoSources[candidate.source.mediaReferenceId])" :key="`preview-video-${layer.id}`" class="scene-runtime-layer scene-runtime-media scene-local-video" :src="videoSources[layer.source.mediaReferenceId!]" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" autoplay muted loop playsinline @pointerdown.stop="selectLayer(layer.id)" />
+        <div ref="scenePosterElement" class="scene-poster live-frame" :class="{ 'has-authored-scene': previewRenderableLayers.length > 0 }">
+          <template v-for="layer in previewMediaLayers()" :key="`preview-media-${layer.id}`">
+            <SceneMediaLayer v-if="layer.kind === 'video' || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="playlistItems().some((item) => item.layerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="playlistSnapshot.playbackRevision" @ready="playbackReady" @ended="playbackEnded" @error="playbackError" @pointerdown.stop="selectLayer(layer.id)" />
+            <div v-else class="scene-runtime-layer scene-runtime-media" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="previewMediaSource(layer) ?? ''" :alt="layer.name" :style="{ objectFit: previewMediaObjectFit(layer) as 'contain' | 'cover' | 'fill' }" /></div>
+          </template>
+          <div v-if="!previewRenderableLayers.length" class="empty-frame"><strong>Khung live đang trống</strong><span>Thêm media có nguồn rõ ràng để bắt đầu.</span></div>
           <div v-if="hasTextLayer" class="scene-copy" @pointerdown.stop="selectLayer(layers.find((layer) => layer.kind === 'text')?.id ?? '')"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
-          <div v-for="layer in layers" :key="`preview-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
+          <div v-for="layer in previewRenderableLayers" :key="`preview-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
+          <div v-for="layer in layers.filter((candidate) => candidate.kind === 'text' && candidate.source.type === 'text')" :key="`preview-text-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
+          <div v-if="activeLayer && isPreviewRenderable(activeLayer, loadedPreviewMediaIds)" class="scene-selection" :class="`scene-selection--${activeLayer.kind}`" :style="previewLayerHitStyle(activeLayer, activeLayerIndex ?? 0)" tabindex="0" aria-label="Lớp đang chọn; kéo để di chuyển" @keydown.left.prevent="nudgeActiveLayer(-1, 0)" @keydown.right.prevent="nudgeActiveLayer(1, 0)" @keydown.up.prevent="nudgeActiveLayer(0, -1)" @keydown.down.prevent="nudgeActiveLayer(0, 1)" @pointerdown.stop.prevent="beginLayerTransform($event, 'move')">
+            <span v-for="handle in resizeHandles" :key="handle" class="scene-resize-handle" :class="`scene-resize-handle--${handle}`" @pointerdown.stop.prevent="beginLayerTransform($event, `resize-${handle}`)" /><span class="scene-transform-origin" /><span class="scene-rotate-handle" aria-label="Xoay lớp" @pointerdown.stop.prevent="beginLayerTransform($event, 'rotate')">↻</span>
+          </div>
           <template v-if="activeLayer">
             <div class="scene-layer-toolbar" aria-label="Thứ tự lớp">
               <button type="button" aria-label="Đưa lên trên cùng" @click="moveActiveLayer('top')"><ArrowUpToLine :size="14" /></button>

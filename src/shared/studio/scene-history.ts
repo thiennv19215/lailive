@@ -32,9 +32,7 @@ function cloneSnapshot(snapshot: SceneEditorSnapshot): SceneEditorSnapshot {
     },
     manualPlaybackSettings: {
       enabled: snapshot.manualPlaybackSettings.enabled,
-      idleLayerIds: [...snapshot.manualPlaybackSettings.idleLayerIds],
-      responseLayerIds: [...snapshot.manualPlaybackSettings.responseLayerIds],
-      selectedResponseLayerId: snapshot.manualPlaybackSettings.selectedResponseLayerId,
+      playlist: snapshot.manualPlaybackSettings.playlist.map((item) => ({ ...item })),
     },
   };
 }

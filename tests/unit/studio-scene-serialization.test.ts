@@ -21,18 +21,21 @@ function preparePlainSceneForOutput(
 }
 
 function preparePlainPresentation(
-  mode: 'stopped' | 'idle' | 'response' | 'paused',
+  mode: 'stopped' | 'idle' | 'paused',
   activeLayerId: string | null,
   enabled: boolean,
-  idleLayerIds: string[],
-  responseLayerIds: string[],
+  playlistLayerIds: string[],
   playbackRevision: number,
 ): ScenePresentationState {
   return {
     mode,
     activeLayerId: activeLayerId ? String(activeLayerId) : null,
-    managedLayerIds: enabled ? [...idleLayerIds, ...responseLayerIds].map((id) => String(id)) : [],
+    managedLayerIds: enabled ? playlistLayerIds.map((id) => String(id)) : [],
     playbackRevision: Number(playbackRevision),
+    activePaused: mode !== 'idle',
+    activeMuted: false,
+    activeVolume: 1,
+    activeLoop: false,
   };
 }
 
@@ -60,22 +63,20 @@ describe('studio scene serialization', () => {
   });
 
   it('serializes scene presentation state into a plain object that passes structuredClone', () => {
-    const idleIdsRef = ref(reactive(['layer-1', 'layer-2']));
-    const responseIdsRef = ref(reactive(['layer-3']));
+    const playlistIdsRef = ref(reactive(['layer-1', 'layer-2', 'layer-3']));
 
     const presentation = preparePlainPresentation(
-      'response',
+      'idle',
       'layer-3',
       true,
-      idleIdsRef.value,
-      responseIdsRef.value,
+      playlistIdsRef.value,
       1,
     );
 
     expect(() => structuredClone(presentation)).not.toThrow();
 
     const cloned = structuredClone(presentation);
-    expect(cloned.mode).toBe('response');
+    expect(cloned.mode).toBe('idle');
     expect(cloned.activeLayerId).toBe('layer-3');
     expect(cloned.managedLayerIds).toEqual(['layer-1', 'layer-2', 'layer-3']);
   });

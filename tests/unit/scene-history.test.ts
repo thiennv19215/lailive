@@ -9,7 +9,7 @@ function snapshot(layers: ReturnType<typeof createProjectSceneLayer>[], canvasPr
     textStyle: { content: 'Live', font: 'Arial' as const, size: 32, color: '#ffffff', align: 'center' as const, bold: false, italic: false },
     imageSettings: { radius: 0, removeBackground: false, backgroundColor: '#00ff00', backgroundSensitivity: 32 },
     avatarSettings: { productSource: 'manual' as const, productLink: '', products: [{ name: '', information: '' }], scripts: [''] },
-    manualPlaybackSettings: { enabled: false, idleLayerIds: [], responseLayerIds: [], selectedResponseLayerId: null },
+    manualPlaybackSettings: { enabled: false, playlist: [] },
   };
 }
 
@@ -29,14 +29,14 @@ describe('scene layer history', () => {
   it('restores manual playback assignments when deleting or restoring a stacked layout', () => {
     const idle = createProjectSceneLayer('idle-video', 'Idle video', 'video');
     const initial = snapshot([idle]);
-    initial.manualPlaybackSettings = { enabled: true, idleLayerIds: ['idle-video'], responseLayerIds: [], selectedResponseLayerId: null };
+    initial.manualPlaybackSettings = { enabled: true, playlist: [{ layerId: 'idle-video', enabled: true }] };
     const history = new SceneEditorHistory(initial);
     const cleared = snapshot([]);
     history.commit(cleared);
 
     expect(history.undo()).toMatchObject({
       layers: [{ id: 'idle-video' }],
-      manualPlaybackSettings: { enabled: true, idleLayerIds: ['idle-video'] },
+      manualPlaybackSettings: { enabled: true, playlist: [{ layerId: 'idle-video', enabled: true }] },
     });
   });
 
