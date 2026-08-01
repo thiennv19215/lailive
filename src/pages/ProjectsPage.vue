@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* global Event, HTMLInputElement */
-import { ArrowRight, Copy, Download, Ellipsis, Pencil, Plus, Trash2, Upload, UserRound, X } from '@lucide/vue';
+import { Copy, Download, Ellipsis, Pencil, Plus, Trash2, Upload, UserRound, X } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -157,12 +157,6 @@ function relativeTime(timestamp: string): string {
   return `${Math.floor(elapsed / 86_400_000)} ngày trước`;
 }
 
-function projectStatus(project: ProjectRecord): string {
-  if (project.scene.layers.length === 0) return 'Chưa thiết lập';
-  if (!project.scene.livestreamSettings.tiktokUsername.trim()) return 'Cần kết nối TikTok';
-  return 'Sẵn sàng tiếp tục';
-}
-
 function toggleProjectMenu(projectId: string): void {
   activeProjectMenuId.value = activeProjectMenuId.value === projectId ? null : projectId;
 }
@@ -171,14 +165,7 @@ function toggleProjectMenu(projectId: string): void {
 <template>
   <AppShell>
     <section class="page-content projects-page">
-      <header class="projects-header">
-        <div>
-          <span class="page-eyebrow">Không gian livestream</span>
-          <h1>Dự án của bạn</h1>
-          <p>Chọn một dự án để tiếp tục hoặc bắt đầu một livestream mới.</p>
-        </div>
-        <button class="projects-primary-action" type="button" @click="openCreateDialog"><Plus :size="18" />Tạo dự án mới</button>
-      </header>
+      <h1 class="projects-title">Dự án</h1>
       <div v-if="notice" class="inline-notice project-notice">{{ notice }}<button type="button" aria-label="Đóng thông báo" @click="notice = ''"><X :size="14" /></button></div>
       <div v-if="loadError" class="inline-notice project-notice" role="alert">{{ loadError }}<button type="button" @click="projectStore.load(true)">Thử lại</button></div>
       <div v-if="loading" class="projects-loading" role="status">Đang tải dự án...</div>
@@ -195,8 +182,7 @@ function toggleProjectMenu(projectId: string): void {
               <div class="poster-visual"><UserRound :size="34" /></div>
               <footer><strong>{{ project.title }}</strong></footer>
             </article>
-            <span class="project-card-meta"><span class="project-status">{{ projectStatus(project) }}</span><span>{{ relativeTime(project.updatedAt) }}</span></span>
-            <span class="project-continue">Tiếp tục <ArrowRight :size="14" /></span>
+            <span class="project-card-meta"><span>{{ relativeTime(project.updatedAt) }}</span></span>
           </button>
           <button class="project-menu-trigger" type="button" :aria-label="`Tùy chọn cho ${project.title}`" :aria-expanded="activeProjectMenuId === project.id" @click="toggleProjectMenu(project.id)"><Ellipsis :size="18" /></button>
           <div v-if="activeProjectMenuId === project.id" class="project-card-actions" role="menu">

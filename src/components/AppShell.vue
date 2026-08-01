@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, ChevronDown, ChevronRight, ExternalLink, FolderOpen, LayoutTemplate, LogOut, Plus, Settings, ShieldCheck, X } from '@lucide/vue';
+import { ChevronDown, ChevronRight, ExternalLink, LayoutGrid, LayoutTemplate, LogOut, Plus, RefreshCw, Settings, ShieldCheck, X } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { AUXILIARY_WINDOW_META, AUXILIARY_WINDOW_NAMES, type AuxiliaryWindowName } from '../shared/contracts/auxiliary-windows';
@@ -81,7 +81,7 @@ function saveProfile(): void {
         <span class="broadcast-mark">⌁</span>
         <span>Live Stream Agent</span>
       </RouterLink>
-      <button v-if="route.name !== 'projects'" class="titlebar-add" type="button" title="Tạo dự án mới" @click="$router.push('/?create=1')">
+      <button class="titlebar-add" type="button" title="Tạo dự án mới" @click="$router.push('/?create=1')">
         <Plus :size="18" />
         <span>Tạo dự án</span>
       </button>
@@ -98,19 +98,15 @@ function saveProfile(): void {
       <section class="account-card">
         <button class="account-profile-trigger" type="button" @click="openProfile"><span class="account-avatar">T</span><span class="account-copy"><strong>{{ displayName }}</strong><span>Không gian của bạn</span></span></button>
         <button class="icon-button" type="button" title="Đăng xuất" @click="$router.push('/login')"><LogOut :size="18" /></button>
+        <div class="credit-row"><b>Credit</b><strong>8.000</strong><button type="button" title="Làm mới credit"><RefreshCw :size="13" /></button></div>
       </section>
 
-      <p class="nav-section">Làm livestream</p>
+      <p class="nav-section">Sáng Tạo</p>
       <nav class="primary-nav" aria-label="Điều hướng chính">
-        <RouterLink to="/" :class="{ active: route.name === 'projects' }"><FolderOpen :size="20" />Dự án</RouterLink>
+        <RouterLink to="/" :class="{ active: route.name === 'projects' }"><LayoutGrid :size="20" />Trang chủ</RouterLink>
         <RouterLink to="/templates" :class="{ active: route.name === 'templates' }"><LayoutTemplate :size="20" />Mẫu</RouterLink>
-      </nav>
-      <p class="nav-section nav-section--support">Hỗ trợ</p>
-      <nav class="primary-nav secondary-nav" aria-label="Cài đặt và hỗ trợ">
         <RouterLink to="/settings" :class="{ active: route.name === 'settings' }"><Settings :size="20" />Cài đặt</RouterLink>
-        <RouterLink to="/diagnostics" :class="{ active: route.name === 'diagnostics' }"><Activity :size="20" />Trợ giúp & kiểm tra</RouterLink>
       </nav>
-      <div class="sidebar-foot">Mọi thay đổi được tự động lưu</div>
     </aside>
 
     <main class="page-stage" :class="{ 'has-recovery-notice': recoveryNotice }">

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createProjectSceneLayer } from '../../src/shared/contracts/projects';
-import { SceneEditorHistory } from '../../src/shared/studio/scene-history';
+import { SceneEditorHistory, type SceneEditorSnapshot } from '../../src/shared/studio/scene-history';
 
-function snapshot(layers: ReturnType<typeof createProjectSceneLayer>[], canvasPreset: 'portrait-1080p' | 'landscape-1080p' = 'portrait-1080p') {
+function snapshot(layers: ReturnType<typeof createProjectSceneLayer>[], canvasPreset: 'portrait-1080p' | 'landscape-1080p' = 'portrait-1080p'): SceneEditorSnapshot {
   return {
     canvasPreset,
     layers,

@@ -164,7 +164,8 @@ export function registerIpcHandlers(
     if (!fs.existsSync(selectedPath)) return null;
     return projectMediaReferenceSchema.parse({
       id: `media-${randomUUID()}`,
-      label: parsed.label,
+      // Keep the operator's filename visible in the source list after import.
+      label: path.basename(selectedPath),
       kind: parsed.kind,
       path: selectedPath,
     });

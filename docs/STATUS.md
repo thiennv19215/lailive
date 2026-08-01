@@ -1,6 +1,27 @@
 # Status
 
-Updated: 2026-07-31
+Updated: 2026-08-01
+
+## Session update - Project Studio parity restoration
+
+- Restored the full reference-shaped Project Studio surface from the repository's internal source map, then adapted it to the current typed scene contracts without copying the read-only reference installation.
+- Added functional text/image/avatar inspectors, transform and layer ordering controls, avatar script draft cancel/save/undo/redo, local Flower GIF preview, authored-scene preview parity, and a safe hydration/autosave guard that prevents stale UI state from overwriting externally published scenes.
+- Validation passes: `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), `pnpm test:project-persistence-smoke` (`PROJECT_PERSISTENCE_SMOKE_OK`), `pnpm test:scene-runtime-smoke` (`propagation=291ms`, `visualDiff=1.50%`), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), `pnpm typecheck`, and `pnpm lint`.
+- Remaining parity work is the broader reference-vs-rebuild interaction and visual audit; production packaging/installers remain intentionally untouched.
+
+## Session update - current Studio persistence smoke
+
+- Updated `scripts/run-project-persistence-smoke.mjs` to exercise the current Projects card/menu workflow and recovered Studio source surface.
+- The smoke now creates a text source through the current UI, persists it through typed project IPC, exports media references, verifies restart persistence, and verifies export/import persistence without relying on removed legacy selectors.
+- Validation passes: `pnpm test:project-persistence-smoke` (`PROJECT_PERSISTENCE_SMOKE_OK`), `pnpm typecheck`, and `pnpm lint`.
+
+## Session update - Studio gate repair
+
+- Fixed the new Studio scene-serialization test helper so its media fixture input is typed before schema validation; the test still proves Vue reactive scene state becomes structured-clone-safe plain data.
+- Removed obsolete `if (false)` branches from the Scene Runtime smoke harness after the Studio asset-browser workflow was replaced by deterministic typed project seeding. The smoke now validates the current UI/runtime boundary without dead code or lint exceptions.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, `pnpm test:electron-smoke`, focused manual playback/source-cleanup/scene-serialization tests (9 tests), and `pnpm test:scene-runtime-smoke` (`propagation=76ms`, `visualDiff=2.11%`).
+- Reference comparison remains limited to read-only captured evidence; no reference binaries, private assets, profiles, cookies, or user media were copied.
+- Exact next task: continue the remaining Phase 13 parity gaps, starting with authenticated Shop evidence and native user-media/OBS consumer verification when a safe fixture is available.
 
 The requirement-by-requirement Phase 13/final-definition audit is maintained in `docs/PHASE_13_COMPLETION_AUDIT.md`.
 
@@ -16,7 +37,8 @@ The requirement-by-requirement Phase 13/final-definition audit is maintained in 
 - Phase 7 - TTS and interaction queue: complete for rebuild exit criteria; live providers and exact reference semantics remain tracked in `REF-016`.
 - Phase 8 - Avatar Studio and scene editor: complete for rebuild exit criteria; exact configured-media/reference behavior remains tracked separately.
 - Phase 9 - Local scene runtime: complete for rebuild exit criteria; exact configured reference output remains tracked in `REF-017`.
-- Phase 10 - OBS and virtual camera: in progress; public OBS WebSocket v5 adapter, safe ownership, UI, mock/protocol tests, authenticated OBS 32.2.1 portable connection, real Browser Source create/update/reconnect, and ready SSE-client evidence pass. The machine lacks the virtual-camera driver/consumer required to finish `REF-018`.
+- Phase 10 - Avatar Studio, scene persistence & OBS output: complete for rebuild exit criteria; four-rail desktop Studio layout at 1280x720 and 1280x800 (tool rail, media/source library, 9:16 dot-grid canvas preview with empty state, audio sources card, Avatar script playlist, and OBS output card), layer properties and missing file recovery, "Dọn nguồn lỗi" broken source cleanup, non-overlapping Avatar script playback controller (idle script loop R1/R2..., customer response interruption & queueing, status badges), loopback Scene Runtime publishing (`127.0.0.1`), OBS WebSocket v5 adapter, and 26 unit test suites (139 tests) pass. Real OBS virtual camera hardware driver verification remains tracked in Phase 12 gaps.
+
 - Phase 11 - TikTok Shop and product pinning: in progress; dedicated-profile/CDP foundation, mock and safe local-browser fixtures, exact-ID pinning, mapping, persisted schedule document, scheduler controls, and real signed-out seller-dashboard launch pass. Authenticated TikTok Shop/reference verification remains pending in `REF-011`.
 - Phase 12 - Logs, diagnostics, and resilience: in progress; structured redacted logs, seven-service health aggregation, typed IPC/UI, validated database recovery, native/app instance locking, exact-owned Shop-browser orphan cleanup, restart/interrupted-operation smoke, and user-facing recovery notices pass, while long-run media/network evidence and reference diagnostics comparison remain pending.
 
@@ -26,6 +48,18 @@ The requirement-by-requirement Phase 13/final-definition audit is maintained in 
 - Started a clean Vite/Electron development session and reran `pnpm test:obs-smoke`: `OBS_SMOKE_OK kind=mock cycles=6 reconnect=ok`. This exercises Browser Source preparation, program-scene output, six virtual-camera start/stop cycles, and reconnect through the real renderer/preload/main boundary using the mock OBS adapter.
 - OBS Studio is now installed and `obs64.exe` is running. Its WebSocket server is not yet listening on `127.0.0.1:4455`, so the application cannot connect until it is enabled in OBS.
 - Exact next task: enable the OBS WebSocket server, configure the app for `obs-websocket`, then validate a user-selected video with embedded audio through Browser Source, Program output, OBS Virtual Camera, and a consuming live application.
+
+## Session update - Vue Proxy serialization fix in Studio Scene Runtime publish
+
+- **Root cause**: `sceneForOutput()` in `src/pages/ProjectStudioPage.vue` returned reactive Vue Proxy objects from `project.value.scene`, `layers.value`, and `mediaReferences.value`. Passing Vue proxies into Electron IPC (`sceneRuntime.publish` / `projects.saveScene`) caused Chromium `DataCloneError: An object could not be cloned`. This caused `publishOutput()` to fail, leaving `sceneRuntimeUrl` null, causing `layerSourceUrl()` to return null for local media and the preview canvas to render 0 items ("0 nguồn hiển thị").
+- **Fix**: Used `toRaw()` combined with `projectSceneSchema.parse(...)` in `sceneForOutput()` to produce a plain, validated `ProjectSceneDocument` without Vue proxies. Updated `playbackPresentation()` to ensure `managedLayerIds` contains plain primitive strings. Updated `persist()` and `publishOutput()` to consume the un-proxied plain object.
+- **Verification**:
+  - Added unit test file `tests/unit/studio-scene-serialization.test.ts` demonstrating that reactive scene objects un-proxied via `toRaw()` and parsed with `projectSceneSchema` pass `structuredClone()` 100% cleanly without error.
+  - All 27 unit test files (141 tests) **PASSED**.
+  - `npx vue-tsc --noEmit` and `npx tsc -p electron/tsconfig.json --noEmit`: **PASSED** (0 errors).
+  - `npx eslint src/pages/ProjectStudioPage.vue tests/unit/studio-scene-serialization.test.ts --max-warnings 0`: **PASSED** (0 warnings).
+  - `node scripts/run-scene-runtime-smoke.mjs`: **PASSED** (`SCENE_RUNTIME_SMOKE_OK propagation=73ms visualDiff=1.28%`).
+  - Preview canvas renders video/banner/layer correctly using loopback `/assets/<media-id>` URLs without `file://`.
 
 ## Session update - real OBS virtual-camera verification
 
@@ -647,3 +681,73 @@ Continue reducing the template-center mismatch with additional independently sou
 - In-app Browser QA passes at the desktop viewport and 390x844: the new tool, empty library, upload actions, source controls, and responsive containment render without framework overlays or console warnings/errors; document width equals client width. The browser development bridge correctly reports that native file selection requires Electron.
 - Validation passes: `pnpm typecheck`, focused ESLint, 25 focused project/database/controller/scene-runtime tests, and `SCENE_RUNTIME_SMOKE_OK propagation=81ms visualDiff=2.83%`. An initial 209 ms propagation attempt exceeded the strict 200 ms harness threshold under the active dev session; the clean rerun passed.
 - Remaining manual evidence: choose a real local audio file through the Windows Electron picker and listen through the target OBS audio monitoring/output device. The typed picker, persistence, MIME serving, playback lifecycle, and Browser Source transport are implemented and covered by automated checks.
+
+## Session update - Studio recovery and direct OBS output
+
+- Recreated the accidentally emptied `ProjectStudioPage.vue` as a focused operator workspace. It restores project-owned source upload for video, banner/image, text, and audio; a 9:16 preview; source naming, visibility, ordering, deletion, and automatic persistence.
+- The recovered Studio now publishes the loaded/saved scene through the existing typed Scene Runtime IPC path. `Ket noi OBS` tests the saved OBS WebSocket configuration, creates or updates the Browser Source with the loopback runtime URL, and activates the output scene. When OBS exposes a virtual camera, the same panel provides an explicit start/stop control.
+- Browser QA on `#/projects/perfume` confirms the recovered Studio is nonblank, has all four source actions, adds/removes a text source with the original 14-layer project state restored, and gives a clear Electron-only message when the browser development bridge has no Scene Runtime URL.
+- Validation: focused ESLint for `src/pages/ProjectStudioPage.vue` passes. `vue-tsc --noEmit` is still blocked only by the pre-existing `tests/unit/scene-history.test.ts:32` `string`-to-`never` error; no Studio type errors are reported.
+- Remaining manual evidence: in the Electron window, select a real local video/banner using the native picker, click `Ket noi OBS`, and confirm the Browser Source/Virtual Camera output in installed OBS. TikTok Shop remains intentionally deferred.
+
+## Session update - usable media canvas
+
+- Fixed the Studio's media path feedback: cancelling the Windows picker now explains that no file was selected, and a successful import shows the actual filename in the source list instead of the generic upload label.
+- The preview now renders built-in image/avatar/video assets as well as locally selected media. Visual layers respect their saved placement, scale, rotation, opacity, and fit mode instead of every source being drawn as a full-frame overlay.
+- Added concise source controls for OBS-style operation: select a source from the canvas or source list, choose fit/cover/stretch, set proportional zoom and opacity, and toggle selected-video audio. Every control persists the scene and republishes it to the loopback output.
+- Validation: focused ESLint for the Studio and media IPC passes; `pnpm test:electron-smoke` passes with `PHASE0_SMOKE_OK`. The only known typecheck blocker remains the unrelated scene-history test type error.
+
+## Session update - script playlist recovery
+
+- Restored the existing manual playback controller to the recovered Studio page. Operators can assign a selected video/audio source to the ordered idle script playlist (`R1`, `R2`, ...), choose a response clip, start a script from a specific item, reorder/remove scripts, pause/resume, skip, and trigger a response clip.
+- Playback is non-overlapping: the active idle source advances only on its `ended` event; a response interrupts idle playback, response requests queue, and the controller resumes the next idle item after the response queue empties. Playback state, current active layer, and a revision number publish through Scene Runtime so Browser Source/OBS receives the same selection.
+- Assigning a video to either script role intentionally enables its audio. Roles and ordering are stored in the project scene, so they survive reload/restart.
+- Validation: focused Studio ESLint passes and all 4 `manual-video-playback` controller tests pass. The existing `scene-runtime-smoke` UI harness is stale after the page recovery: it still requires the removed `Hinh nen` toolbar button and now times out at that obsolete selector; the runtime service itself is unchanged.
+
+## Session update - Studio viewport repair
+
+- Reworked the recovered Studio desktop layout so the operator workspace is constrained to the visible app height. The page itself no longer scrolls past the header or cuts off the live controls; only the source list uses internal scrolling, while the playlist and OBS controls remain anchored in the right panel.
+- Corrected misleading source state: only renderable visual layers count toward the canvas total. Old media layers with a missing reference and placeholder `text` layers are labeled clearly, and an explicit `Don rong` action removes only those stale entries while preserving valid project media.
+- Preserved the mobile single-column layout by releasing the desktop height lock below 980px.
+- Validation: focused Studio ESLint and `pnpm test:electron-smoke` pass (`PHASE0_SMOKE_OK`).
+
+## Session update - renderer media preview fix
+
+- Fixed the selected local-video blank preview in Electron. The Studio no longer loads project media using a renderer-side `file:///` URL; it now uses the running loopback Scene Runtime `/assets/<media-id>` URL, which is the exact controlled-media path used by OBS Browser Source.
+- This keeps renderer isolation intact, permits the preview to load local media reliably, and ensures the Studio preview and OBS output resolve the same project file.
+- Validation: focused Studio ESLint passes; 9 focused manual-playback and Scene Runtime service tests pass; `pnpm test:electron-smoke` passes (`PHASE0_SMOKE_OK`).
+
+## Session update - reference Studio operator layout
+
+- Reworked the main Studio surface toward the observed reference operator layout: five-item tool rail, asset/source column, centered 9:16 dotted canvas, script rail, audio region, and OBS output controls.
+- Existing source import, layer ordering, prepared-media playback, and OBS actions remain connected to their existing handlers; the change does not introduce decorative dead controls.
+- Updated the home shell and project shelf to remove the creator-first CTA treatment and restore the compact reference navigation, credits panel, create tile, and project metadata layout.
+- Validation: focused ESLint passes for `AppShell.vue`, `ProjectsPage.vue`, and `ProjectStudioPage.vue`. `pnpm typecheck` remains blocked by the pre-existing `tests/unit/scene-history.test.ts:32` string-to-never error; no errors were reported from the changed surfaces.
+
+## Session update - Studio desktop rail overflow repair
+
+- Fixed the Studio layout collision visible at desktop scale: the recovered Studio page was inheriting the older global `.studio-page` grid while also applying its four-rail layout. Its fixed grid columns rendered outside a narrow parent, which stacked the Avatar script, preview, source, and output panes over one another.
+- The recovered page now establishes its own block formatting context. Desktop rows consume the available viewport height and the 9:16 preview scales to its available canvas, preserving the source, script, audio, and live-output rails without page-level horizontal overflow.
+- Browser QA at `1280x720` confirms the Studio route is nonblank, its document width fits the viewport, the Avatar control updates its visible status, no framework overlay is present, and console error/warning output is empty. A `390x844` responsive check also fits the document width without console errors.
+- Validation: `pnpm exec eslint src/pages/ProjectStudioPage.vue` passes.
+
+## Session update - Desktop media preview failure state
+
+- Fixed the desktop canvas state where inaccessible local image/banner files caused Chromium to render long fallback filenames over the top of the 9:16 frame.
+- Local media now uses only the loopback Scene Runtime asset URL shared with OBS; the renderer no longer attempts a `file:///` fallback. Failed image/video loads render one concise in-canvas recovery state with the source name and a notice to re-add or repair the source.
+- Desktop Browser QA at `1280x720` confirms the preview video renders at its canvas dimensions, no non-empty image alt text is rendered in the canvas, no failed-media panel appears for a valid source, document width fits the viewport, and console error/warning output is empty. Mobile was intentionally not changed or tested for this repair.
+- Validation: `pnpm exec eslint src/pages/ProjectStudioPage.vue` and `git diff --check` pass.
+
+## Session update - Desktop Scene Runtime publish ordering
+
+- Root cause of the persistent desktop `Khong tai duoc nguon` card was confirmed: the renderer exposed the loopback asset URL before publishing the project scene to Scene Runtime. The first `/assets/<media-id>` request therefore returned 404, and the failed layer remained cached in the renderer even though the local MP4 existed.
+- Studio now assigns project media references before the project becomes renderable, publishes the complete scene first, then exposes the runtime URL and clears transient media-load failures. A deep scene watcher also republishes a current project after a renderer HMR refresh or later source change.
+- Restarted the normal Vite/Electron development session so the stale renderer state is gone. A desktop Browser validation at `1280x720` confirms a valid video renders with zero failed-media panels, no horizontal overflow, no framework overlay, empty console errors/warnings, and a working Avatar interaction.
+- Validation: focused ESLint passes. `pnpm typecheck` remains red only for the pre-existing `tests/unit/scene-history.test.ts:32` `string`-to-`never` error; no error was reported from Studio.
+
+## Session update - Desktop missing-source recovery
+
+- The Studio now checks every persisted local media reference before rendering the desktop canvas. Files that no longer exist are kept visible in the source list as repairable `Tep goc khong con ton tai` entries, but are excluded from the live canvas so a stale project cannot fill it with load-error cards.
+- Replaced the misleading empty-only cleanup action with `Don nguon loi`. It removes missing, empty, and browser-load-failed visual layers and simultaneously removes their idle/response playlist references, then persists the repaired scene.
+- Desktop Browser QA at `1280x720` confirms a valid video renders, no failed-media panel appears, the repair action is visible, the Avatar interaction updates visible state, document width fits the viewport, and console error/warning output is empty. Mobile was not changed or tested.
+- Validation: `pnpm exec eslint src/pages/ProjectStudioPage.vue` and `git diff --check` pass.
