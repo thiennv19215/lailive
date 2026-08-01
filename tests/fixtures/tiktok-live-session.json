@@ -1,0 +1,48 @@
+{
+  "format": "ai-livestream-live-events",
+  "version": 1,
+  "recordedAt": "2026-07-29T12:00:10.000Z",
+  "events": [
+    {
+      "id": "fixture-chat",
+      "type": "chat",
+      "timestamp": "2026-07-29T12:00:00.000Z",
+      "source": "mock",
+      "user": { "id": "u-1", "uniqueId": "lan.nguyen", "nickname": "Lan" },
+      "text": "Serum này dùng cho da dầu được không?"
+    },
+    {
+      "id": "fixture-gift",
+      "type": "gift",
+      "timestamp": "2026-07-29T12:00:01.000Z",
+      "source": "mock",
+      "user": { "id": "u-2", "uniqueId": "minh.anh", "nickname": "Minh Anh" },
+      "count": 1,
+      "gift": { "id": "rose", "name": "Rose", "diamondCount": 1, "repeatCount": 3, "repeatEnd": true }
+    },
+    {
+      "id": "fixture-like",
+      "type": "like",
+      "timestamp": "2026-07-29T12:00:02.000Z",
+      "source": "mock",
+      "user": { "id": "u-3", "uniqueId": "bao.tran", "nickname": "Bảo" },
+      "count": 12
+    },
+    {
+      "id": "fixture-follow",
+      "type": "follow",
+      "timestamp": "2026-07-29T12:00:03.000Z",
+      "source": "mock",
+      "user": { "id": "u-4", "uniqueId": "thu.ha", "nickname": "Thu Hà" },
+      "count": 1
+    },
+    {
+      "id": "fixture-share",
+      "type": "share",
+      "timestamp": "2026-07-29T12:00:04.000Z",
+      "source": "mock",
+      "user": { "id": "u-5", "uniqueId": "quang.vo", "nickname": "Quang" },
+      "count": 1
+    }
+  ]
+}

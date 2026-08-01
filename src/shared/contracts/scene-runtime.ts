@@ -1,0 +1,48 @@
+import type { AvatarSpeechState } from './queue';
+import type { ProjectSceneDocument } from './projects';
+
+export interface ScenePresentationState {
+  mode: 'scene' | 'stopped' | 'idle' | 'response' | 'paused';
+  activeLayerId: string | null;
+  managedLayerIds: string[];
+  playbackRevision: number;
+}
+
+export function createDefaultScenePresentationState(): ScenePresentationState {
+  return { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0 };
+}
+
+export interface SceneRuntimeState {
+  scene: ProjectSceneDocument;
+  avatarState: AvatarSpeechState;
+  presentation: ScenePresentationState;
+}
+
+export interface SceneRuntimeEvent {
+  kind: 'snapshot' | 'patch';
+  revision: number;
+  sentAt: string;
+  changedKeys: string[];
+  state: SceneRuntimeState;
+}
+
+export interface SceneRuntimeBrowserLog {
+  clientId: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+  timestamp: string;
+}
+
+export interface SceneRuntimeStatus {
+  running: boolean;
+  host: '127.0.0.1';
+  port: number | null;
+  url: string | null;
+  revision: number;
+  connectedClients: number;
+  readyClients: number;
+  hasScene: boolean;
+  lastPublishedAt: string | null;
+  lastReadyAt: string | null;
+  recentLogs: SceneRuntimeBrowserLog[];
+}
