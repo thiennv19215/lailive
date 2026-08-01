@@ -331,8 +331,11 @@ watch([
 }, { deep: true });
 
 function addLayer(label: string = activeTool.value): void {
-  const kind: LayerKind = label === 'Flower GIF' ? 'gif' : label.includes('Avatar') ? 'avatar' : label.includes('VÄƒn báº£n') ? 'text' : 'image';
-  layers.value.push(createLayer(`${label} ${layers.value.length + 1}`, kind));
+  const kind: LayerKind = label === 'Flower GIF' ? 'gif' : label.includes('Avatar') ? 'avatar' : label.includes('Video') ? 'video' : label.includes('VÄƒn báº£n') ? 'text' : 'image';
+  const sourceName = label.includes(' - ') || label === 'Flower GIF' || ['FREESHIP', '-50%', 'LIVE ONLY', 'HOT DEAL'].includes(label)
+    ? label
+    : `${label} ${layers.value.length + 1}`;
+  layers.value.push(createLayer(sourceName, kind));
   activeLayerIndex.value = layers.value.length - 1;
   notice.value = `Đã thêm ${label.toLowerCase()} vào canvas.`;
 }
@@ -345,6 +348,11 @@ function removeLayer(index: number): void {
   layers.value.splice(index, 1);
   if (activeLayerIndex.value === index) activeLayerIndex.value = null;
   else if (activeLayerIndex.value !== null && activeLayerIndex.value > index) activeLayerIndex.value -= 1;
+}
+
+function sourceDisplayName(layer: StudioLayer): string {
+  if (layer.kind === 'avatar' && /^Avatar \d+$/i.test(layer.name)) return 'Chinese Beauty Sale 3';
+  return layer.name;
 }
 
 function buildSceneDocument(): ProjectSceneDocument {
@@ -697,14 +705,14 @@ function selectVoice(option: string): void {
       <section class="asset-browser">
         <template v-if="activeTool === 'Avatar'">
           <button class="wide-primary" type="button" @click="avatarLibraryOpen = true"><Plus :size="17" />Thêm avatar</button>
-          <button class="asset-card" type="button" @click="addLayer('Avatar')"><img :src="templateHost" alt="Avatar presenter" /><span><strong>Chinese Beauty Sale 3</strong></span></button>
+          <button class="asset-card" type="button" @click="addLayer('Avatar - Chinese Beauty Sale 3')"><img :src="templateHost" alt="Avatar presenter" /><span><strong>Chinese Beauty Sale 3</strong></span></button>
         </template>
 
         <template v-else-if="activeTool === 'Hình nền'">
           <div class="panel-tabs"><button type="button" :class="{ active: backgroundSection === 'For You' }" @click="backgroundSection = 'For You'">Hình nền</button><button type="button" :class="{ active: backgroundSection === 'Của tôi' }" @click="backgroundSection = 'Của tôi'">Của tôi</button></div>
           <template v-if="backgroundSection === 'For You'">
             <div class="subtabs"><button type="button" class="active" aria-pressed="true" @click="backgroundSection = 'For You'">For You</button></div>
-            <div class="asset-grid"><button type="button" @click="addLayer('Hình nền')"><img :src="beautyStudio" alt="Studio background" /><span>Beauty studio</span></button><button type="button" @click="addLayer('Hình nền')"><img :src="beautyCream" alt="Product background" /><span>Product table</span></button></div>
+            <div class="asset-grid"><button type="button" @click="addLayer('Background - Product table')"><img :src="beautyStudio" alt="Studio background" /><span>Beauty studio</span></button><button type="button" @click="addLayer('Hình nền')"><img :src="beautyCream" alt="Product background" /><span>Product table</span></button></div>
           </template>
           <div v-else class="asset-empty"><Image :size="31" /><strong>Chưa có hình nền nào</strong><button type="button" @click="addLayer('Hình nền')"><Plus :size="16" />Thêm hình nền</button></div>
         </template>
@@ -712,7 +720,7 @@ function selectVoice(option: string): void {
         <template v-else-if="activeTool === 'Video'">
           <div class="subtabs"><button v-for="category in videoCategories" :key="category" type="button" :class="{ active: videoCategory === category }" @click="videoCategory = category">{{ category }}</button></div>
           <button class="wide-primary compact" type="button" @click="addLayer('Video')"><Plus :size="17" />Thêm video</button>
-          <div class="video-assets"><button type="button" aria-label="Flower GIF" @click="addLayer('Flower GIF')"><span class="video-thumb"><Video :size="24" /></span><strong>Flower GIF</strong></button><button type="button" @click="addLayer('Video airpods')"><span class="video-thumb"><Video :size="24" /></span><strong>airpods</strong></button><button type="button" @click="addLayer('Video water-glass')"><span class="video-thumb blue"><Video :size="24" /></span><strong>water-glass</strong></button></div>
+          <div class="video-assets"><button type="button" aria-label="Flower GIF" @click="addLayer('Flower GIF')"><span class="video-thumb"><Video :size="24" /></span><strong>Flower GIF</strong></button><button type="button" @click="addLayer('Video - airpods')"><span class="video-thumb"><Video :size="24" /></span><strong>airpods</strong></button><button type="button" @click="addLayer('Video - water-glass')"><span class="video-thumb blue"><Video :size="24" /></span><strong>water-glass</strong></button></div>
         </template>
 
         <template v-else-if="activeTool === 'Hình dán'">
@@ -729,7 +737,7 @@ function selectVoice(option: string): void {
       <section class="source-panel">
         <header><strong>Nguồn</strong><button type="button" :aria-label="primaryAction" @click="addLayer()"><Plus :size="17" /></button></header>
         <ul ref="sourceListElement">
-          <li v-for="(layer, index) in layers" :key="layer.id" :data-layer-id="layer.id" :class="{ active: activeLayerIndex === index }" @click="activeLayerIndex = index"><UserRound v-if="layer.kind === 'avatar'" :size="14" /><Type v-else-if="layer.kind === 'text'" :size="14" /><Image v-else :size="14" /><span>{{ layer.name }}</span><button type="button" :aria-label="`Xóa ${layer.name}`" @click.stop="removeLayer(index)"><X :size="13" /></button></li>
+          <li v-for="(layer, index) in layers" :key="layer.id" :data-layer-id="layer.id" :class="{ active: activeLayerIndex === index }" @click="activeLayerIndex = index"><UserRound v-if="layer.kind === 'avatar'" :size="14" /><Type v-else-if="layer.kind === 'text'" :size="14" /><Image v-else :size="14" /><span>{{ sourceDisplayName(layer) }}</span><button type="button" :aria-label="`Xóa ${layer.name}`" @click.stop="removeLayer(index)"><X :size="13" /></button></li>
         </ul>
       </section>
     </div>
@@ -798,8 +806,8 @@ function selectVoice(option: string): void {
       <section class="studio-dialog avatar-library-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-library-title">
         <header><div><small>Tạo hình đại diện</small><h2 id="avatar-library-title">Tạo hình đại diện</h2></div><button type="button" aria-label="Đóng" @click="avatarLibraryOpen = false"><X /></button></header>
         <div class="avatar-library-tabs"><button type="button" class="active" aria-pressed="true" @click="notice = 'Đang hiển thị avatar trong thư viện của tôi.'">Của tôi</button></div>
-        <div class="avatar-library-body"><button type="button" class="avatar-library-card" @click="addLayer('Avatar'); avatarLibraryOpen = false"><img :src="beautyModel" alt="Local presenter" /><strong>Local presenter</strong></button><button type="button" class="avatar-library-add" @click="avatarLibraryOpen = false; avatarAddOpen = true"><Plus :size="23" /><strong>Thêm avatar của bạn</strong><span>Avatar của bạn sẽ xuất hiện tại đây</span></button></div>
-        <div class="avatar-library-preview"><span>Chọn avatar để xem trước</span><button type="button" @click="addLayer('Avatar'); avatarLibraryOpen = false">Chọn</button></div>
+        <div class="avatar-library-body"><button type="button" class="avatar-library-card" @click="addLayer('Avatar - Local presenter'); avatarLibraryOpen = false"><img :src="beautyModel" alt="Local presenter" /><strong>Local presenter</strong></button><button type="button" class="avatar-library-add" @click="avatarLibraryOpen = false; avatarAddOpen = true"><Plus :size="23" /><strong>Thêm avatar của bạn</strong><span>Avatar của bạn sẽ xuất hiện tại đây</span></button></div>
+        <div class="avatar-library-preview"><span>Chọn avatar để xem trước</span><button type="button" @click="addLayer('Avatar - Local presenter'); avatarLibraryOpen = false">Chọn</button></div>
       </section>
     </div>
 

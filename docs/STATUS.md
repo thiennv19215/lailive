@@ -2,6 +2,12 @@
 
 Updated: 2026-08-01
 
+## Session update - meaningful source names
+
+- Project Studio source rows now preserve asset names for newly added avatar, background, video, GIF, and sticker layers instead of generic numeric labels.
+- Legacy `Avatar N` rows display the known reference asset name `Chinese Beauty Sale 3` so the source panel remains understandable.
+- Validation passes: Studio inspector smoke, `pnpm typecheck`, and focused Studio ESLint.
+
 ## Session update - dynamic Studio canvas layers
 
 - Removed the remaining hardcoded canvas dependency for the main preview: image visibility/source, text overlay visibility, and empty-state pseudo layers now follow the current scene layer collection.
