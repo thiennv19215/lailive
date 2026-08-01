@@ -360,6 +360,35 @@ function selectLayer(layerId: string): void {
   if (index >= 0) activeLayerIndex.value = index;
 }
 
+function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string, string> {
+  const imageIndex = layers.value.filter((candidate) => candidate.kind === 'image' || candidate.kind === 'avatar').indexOf(layer);
+  const box = layer.kind === 'text'
+    ? { left: 8, top: 7, width: 84, height: 18 }
+    : layer.kind === 'gif'
+      ? { left: 10, top: 30, width: 80, height: 30 }
+      : imageIndex === 1
+        ? { left: 8, top: 57, width: 84, height: 24 }
+        : { left: 0, top: 0, width: 100, height: 100 };
+  const transform = layer.transform;
+  const visualZ = layer.kind === 'text'
+    ? 300
+    : layer.kind === 'gif'
+      ? 250
+      : imageIndex === 1
+        ? 220
+        : layer.kind === 'avatar'
+          ? 200
+          : 100;
+  return {
+    left: `${box.left}%`,
+    top: `${box.top}%`,
+    width: `${box.width}%`,
+    height: `${box.height}%`,
+    zIndex: String(visualZ + layers.value.length - index),
+    transform: `translate(${(transform.x / box.width) * 100}%, ${(transform.y / box.height) * 100}%) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`,
+  };
+}
+
 function buildSceneDocument(): ProjectSceneDocument {
   const base = clonePlain(persistedScene.value);
   return {
@@ -752,8 +781,9 @@ function selectVoice(option: string): void {
       <div class="studio-grid">
         <div ref="scenePosterElement" class="scene-poster live-frame scene-poster--perfume" :class="{ 'has-authored-scene': hasAuthoredScene, 'has-image-layer': hasImageLayer, 'has-text-layer': hasTextLayer }">
           <img v-if="previewImageLayer" :src="previewImageLayer.source" alt="Scene preview" :style="sceneMediaStyle" @pointerdown.stop="selectLayer(previewImageLayer.layer.id)" />
-          <div v-if="activeLayer?.kind === 'gif'" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="{ left: '10%', top: '30%', width: '80%', height: '30%', transform: activeSceneTransform }" @pointerdown.stop="selectLayer(activeLayer.id)"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
+          <div v-for="layer in layers.filter((candidate) => candidate.kind === 'gif')" :key="`preview-gif-${layer.id}`" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
           <div v-if="hasTextLayer" class="scene-copy" @pointerdown.stop="selectLayer(layers.find((layer) => layer.kind === 'text')?.id ?? '')"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
+          <div v-for="layer in layers" :key="`preview-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
           <template v-if="activeLayer">
             <div class="scene-layer-toolbar" aria-label="Thứ tự lớp">
               <button type="button" aria-label="Đưa lên trên cùng" @click="moveActiveLayer('top')"><ArrowUpToLine :size="14" /></button>

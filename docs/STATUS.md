@@ -2,6 +2,12 @@
 
 Updated: 2026-08-01
 
+## Session update - per-layer canvas hit testing
+
+- Project Studio now creates a hit target for every scene layer, with separate visual regions for text, GIF, secondary image, avatar, and background layers.
+- Clicking a visible layer selects that exact layer; the active transform overlay keeps pointer control for moving/resizing/rotating it.
+- Validation passes: Studio inspector smoke, `pnpm typecheck`, and focused Studio ESLint.
+
 ## Session update - direct canvas layer selection
 
 - Clicking a rendered image, GIF, or text region in Project Studio now selects its corresponding scene layer and updates the layer toolbar/inspector immediately.
