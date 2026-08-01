@@ -76,7 +76,7 @@ function updateLayerNode(root, layer, index, state) {
   root.classList.toggle('is-chroma', !isText && layer.chromaKey.enabled);
   Object.assign(root.style, {
     left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%`,
-    zIndex: String(20 + index),
+    zIndex: String(1000 - index),
     opacity: layer.visible && speechVisible && presentationVisible ? String(layer.opacity) : '0',
     pointerEvents: layer.kind === 'audio' ? 'none' : 'auto',
     transform: `translate(${(layer.transform.x / box.width) * 100}%, ${(layer.transform.y / box.height) * 100}%) rotate(${layer.transform.rotation}deg) scale(${layer.transform.scaleX}, ${layer.transform.scaleY})`,

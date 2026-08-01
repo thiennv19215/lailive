@@ -36,11 +36,31 @@ export function isPreviewRenderable(layer: ProjectSceneLayer, loadedMediaIds: Re
   return layer.source.type === 'text' || resolvePreviewSource(layer, loadedMediaIds) !== null;
 }
 
-export function previewLayerBox(layer: ProjectSceneLayer, imageIndex = 0): { left: number; top: number; width: number; height: number } {
+export interface PreviewLayerBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export function previewLayerBox(layer: ProjectSceneLayer, imageIndex = 0): PreviewLayerBox {
   if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
   if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
   if (imageIndex === 1) return { left: 8, top: 57, width: 84, height: 24 };
   return { left: 0, top: 0, width: 100, height: 100 };
+}
+
+export function fitContainedPreviewBox(box: PreviewLayerBox, sourceAspectRatio: number, posterAspectRatio: number): PreviewLayerBox {
+  if (sourceAspectRatio <= 0 || posterAspectRatio <= 0 || box.width <= 0 || box.height <= 0) return box;
+  const targetAspectRatio = (box.width * posterAspectRatio) / box.height;
+
+  if (sourceAspectRatio > targetAspectRatio) {
+    const height = box.height * (targetAspectRatio / sourceAspectRatio);
+    return { ...box, top: box.top + (box.height - height) / 2, height };
+  }
+
+  const width = box.width * (sourceAspectRatio / targetAspectRatio);
+  return { ...box, left: box.left + (box.width - width) / 2, width };
 }
 
 export function previewTransform(transform: LayerTransform, box: { width: number; height: number }): string {
@@ -55,7 +75,7 @@ export function previewLayerStyle(layer: ProjectSceneLayer, index: number, image
     top: `${box.top}%`,
     width: `${box.width}%`,
     height: `${box.height}%`,
-    zIndex: String(100 + index),
+    zIndex: String(1000 - index),
     opacity: layer.visible ? layer.opacity : 0,
     pointerEvents: layer.visible ? 'auto' : 'none',
     transform: previewTransform(layer.transform, box),

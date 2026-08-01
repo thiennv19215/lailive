@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createProjectSceneLayer } from '../../src/shared/contracts/projects';
-import { isPreviewRenderable, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
+import { fitContainedPreviewBox, isPreviewRenderable, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
 
 describe('Studio preview source and geometry', () => {
   it('does not render implicit name-based or empty sources', () => {
@@ -25,11 +25,26 @@ describe('Studio preview source and geometry', () => {
     const style = previewLayerStyle(layer, 3);
     expect(style.transform).toBe('translate(12.5%, -16.666666666666664%) rotate(12deg) scale(1.5, 0.8)');
     expect(style.opacity).toBe(0.65);
-    expect(style.zIndex).toBe('103');
+    expect(style.zIndex).toBe('997');
     expect(previewTransform(layer.transform, { width: 80, height: 30 })).toContain('translate(12.5%');
     layer.visible = false;
     expect(previewLayerStyle(layer, 3).pointerEvents).toBe('none');
     expect(previewLayerStyle(layer, 3).opacity).toBe(0);
     expect(layer.fitMode).toBe('cover');
+  });
+
+  it('fits a contained landscape image tightly inside a portrait layer box', () => {
+    expect(fitContainedPreviewBox(
+      { left: 0, top: 0, width: 100, height: 100 },
+      1.5,
+      9 / 16,
+    )).toEqual({ left: 0, top: 31.25, width: 100, height: 37.5 });
+  });
+
+  it('renders lower array indexes above later layers', () => {
+    const front = createProjectSceneLayer('front', 'Front', 'image', { type: 'builtin', assetId: 'beauty-model', mediaReferenceId: null });
+    const back = createProjectSceneLayer('back', 'Back', 'image', { type: 'builtin', assetId: 'beauty-studio', mediaReferenceId: null });
+
+    expect(Number(previewLayerStyle(front, 0).zIndex)).toBeGreaterThan(Number(previewLayerStyle(back, 1).zIndex));
   });
 });

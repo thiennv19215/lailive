@@ -797,3 +797,35 @@ Continue reducing the template-center mismatch with additional independently sou
 - Replaced the misleading empty-only cleanup action with `Don nguon loi`. It removes missing, empty, and browser-load-failed visual layers and simultaneously removes their idle/response playlist references, then persists the repaired scene.
 - Desktop Browser QA at `1280x720` confirms a valid video renders, no failed-media panel appears, the repair action is visible, the Avatar interaction updates visible state, document width fits the viewport, and console error/warning output is empty. Mobile was not changed or tested.
 - Validation: `pnpm exec eslint src/pages/ProjectStudioPage.vue` and `git diff --check` pass.
+
+## Session update - Studio page decomposition
+
+- Reduced `ProjectStudioPage.vue` from roughly 984 to 863 lines by extracting the tool rail, asset browser, source list, playlist panel, inspector sidebar, mixer footer, and manual playback orchestration into focused Studio components/composables.
+- Preserved the page as the owner of project hydration, persistence, canvas transforms, dialogs, and Electron IPC while child panels communicate through typed props, models, and events.
+- Restored legacy text-layer preview compatibility by rendering layers identified by `kind: 'text'` even when older project data still has `source.type: 'none'`; corrected the encoded `Văn bản` layer classification and exposed the GIF media-kind attribute expected by the Studio smoke test.
+- Validation passes: focused ESLint, `pnpm typecheck`, 19 focused playback/preview tests, `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check`.
+- In-app Browser QA at `http://127.0.0.1:5173/#/projects/perfume` confirms the Studio is nonblank, tool/asset/source/inspector panels render, text edits update the canvas preview, a Flower GIF mounts once with its controlled local source, and console warnings/errors are empty.
+
+## Session update - CapCut-style image selection bounds
+
+- Image selection handles now wrap the visible pixels of `contain` images instead of the full underlying layer rectangle, removing the large top/bottom dead area shown around landscape images on the 9:16 canvas.
+- Studio records each loaded image's natural aspect ratio and fits the selection box inside the authored layer bounds while preserving the layer center, transform, rotation, and scale behavior. The duplicate selection overlay was removed so exactly one eight-handle control is rendered.
+- Added focused geometry coverage for a 3:2 landscape image inside a 9:16 layer; the expected visible selection is 100% wide and 37.5% tall, vertically centered.
+- In-app Browser QA confirms a 900x589 Beauty Studio image renders in a 268.875x175.963 selection box while its underlying layer remains 268.875x478, with handles aligned to the visible image edges and no console warnings/errors.
+- Validation passes: focused ESLint, `pnpm typecheck`, 4 Studio preview tests, `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check`.
+
+## Session update - reliable add-text editing
+
+- Fixed a long-running Studio identity defect where newly added sources reused short counter IDs such as `layer-13`. Persisted projects could then contain duplicate Vue keys, causing selection/inspector state to target the wrong layer and making a newly added text layer appear uneditable.
+- New sources now use UUID-backed layer IDs. Project hydration also detects duplicate legacy IDs, preserves the first occurrence, assigns fresh IDs to later duplicates, and saves the repaired scene automatically.
+- Adding `Văn bản` now increments an explicit focus request. The inspector focuses and selects the `Nội dung văn bản` textarea immediately, allowing the operator to type without an extra click while the canvas preview updates live.
+- In-app Browser QA repaired the existing duplicate-ID project from 16 layers/15 unique IDs to 16/16, then added a 17th uniquely identified text layer, confirmed the textarea was the active element, typed `NỘI DUNG MỚI` directly, and observed the same text on the canvas with no new console warning/error.
+- Validation passes: focused ESLint, `pnpm typecheck`, 6 focused identity/preview tests, `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check`.
+
+## Session update - consistent front-to-back layer order
+
+- Fixed the layer-order invariant across the source list, Studio preview, and loopback Browser Source. Index `0` now consistently means the front/top layer; lower list rows render progressively behind it.
+- New image, video, audio, text, avatar, and built-in sources are inserted at the top of the source stack instead of being appended behind existing content.
+- Studio preview and `scene-runtime/runtime.js` now assign descending z-index values from the first layer, so `Đưa lên trên cùng`, `Đưa lên một lớp`, `Đưa xuống một lớp`, and `Đưa xuống dưới cùng` match their labels and OBS output uses the same stacking order.
+- In-app Browser QA added Beauty Studio and Product Table as overlapping layers, selected the lower Beauty Studio source, and clicked `Đưa lên trên cùng`. Its source row moved from index 1 to index 0 and its computed z-index changed from 999 to 1000 while Product Table moved to 999; the overlap visibly switched to the promoted image with no console errors/warnings.
+- Validation passes: focused ESLint, `pnpm typecheck`, 25 focused preview/order tests in the current Vitest invocation, `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK propagation=38ms visualDiff=2.01%`), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check`.
