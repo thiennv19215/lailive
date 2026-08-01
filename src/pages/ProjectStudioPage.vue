@@ -132,6 +132,7 @@ let imageEditSnapshot: number | null = null;
 const avatarScripts = ref(['']);
 const mediaReferences = ref<ProjectMediaReference[]>([]);
 const videoSources = ref<Record<string, string>>({});
+const imageSources = ref<Record<string, string>>({});
 const mediaStatuses = ref<ProjectMediaStatus[]>([]);
 const pendingAvatarMedia = ref<ProjectMediaReference | null>(null);
 const pinManagerState = ref<'closed' | 'checking' | 'login-required'>('closed');
@@ -215,6 +216,11 @@ const previewImageLayer = computed(() => {
   const source = name.includes('10') ? beautyCream : name.includes('44') ? beautyStudio : name.includes('22') ? beautyModel : templateHost;
   return { layer, source };
 });
+const previewLocalImageLayers = computed(() => layers.value.filter((layer) => (
+  layer.kind === 'image' &&
+  layer.source.mediaReferenceId &&
+  imageSources.value[layer.source.mediaReferenceId]
+)));
 
 const activeTransform = computed(() => activeLayer.value?.transform ?? DEFAULT_LAYER_TRANSFORM);
 const activeSelectionBox = computed(() => activeLayer.value?.kind === 'text'
@@ -288,7 +294,7 @@ onMounted(async () => {
     projectLoaded.value = true;
     autosaveStatus.value = 'saved';
     await refreshMediaStatus();
-    await loadVideoSources();
+    await loadMediaSources();
   }
   else notice.value = 'Không tìm thấy dữ liệu dự án local; đang mở scene mock an toàn.';
   await nextTick();
@@ -358,10 +364,35 @@ async function addLocalVideo(): Promise<void> {
   notice.value = `Đã thêm video ${reference.label} vào canvas.`;
 }
 
-async function loadVideoSources(): Promise<void> {
-  const entries = await Promise.all(mediaReferences.value.filter((reference) => reference.kind === 'video').map(async (reference) => [reference.id, await globalThis.window.desktopApi.media.read(reference)] as const));
-  const loaded = Object.fromEntries(entries.filter((entry): entry is [string, string] => Boolean(entry[1])));
-  if (Object.keys(loaded).length) videoSources.value = { ...videoSources.value, ...loaded };
+async function addLocalImage(): Promise<void> {
+  const reference = await globalThis.window.desktopApi.media.pick('image', 'Thêm ảnh');
+  if (!reference) {
+    notice.value = 'Chưa chọn ảnh local.';
+    return;
+  }
+  const dataUrl = await globalThis.window.desktopApi.media.read(reference);
+  mediaReferences.value.push(reference);
+  const layer = createLayer(reference.label, 'image', { type: 'media', assetId: null, mediaReferenceId: reference.id });
+  layers.value.push(layer);
+  activeLayerIndex.value = layers.value.length - 1;
+  if (dataUrl) imageSources.value = { ...imageSources.value, [reference.id]: dataUrl };
+  await refreshMediaStatus();
+  notice.value = `Đã thêm ảnh ${reference.label} vào canvas.`;
+}
+
+async function loadMediaSources(): Promise<void> {
+  const entries = await Promise.all(mediaReferences.value
+    .filter((reference) => reference.kind === 'image' || reference.kind === 'video')
+    .map(async (reference) => [reference, await globalThis.window.desktopApi.media.read(reference)] as const));
+  const loadedImages: Record<string, string> = {};
+  const loadedVideos: Record<string, string> = {};
+  for (const [reference, dataUrl] of entries) {
+    if (!dataUrl) continue;
+    if (reference.kind === 'image') loadedImages[reference.id] = dataUrl;
+    if (reference.kind === 'video') loadedVideos[reference.id] = dataUrl;
+  }
+  if (Object.keys(loadedImages).length) imageSources.value = { ...imageSources.value, ...loadedImages };
+  if (Object.keys(loadedVideos).length) videoSources.value = { ...videoSources.value, ...loadedVideos };
 }
 
 function clonePlain<T>(value: T): T {
@@ -761,6 +792,7 @@ function selectVoice(option: string): void {
 
     <div class="studio-left-stack">
       <section class="asset-browser">
+        <button v-if="activeTool === tools[1].label" class="wide-primary compact" type="button" @click="addLocalImage"><Plus :size="17" />Thêm ảnh từ máy</button>
         <template v-if="activeTool === 'Avatar'">
           <button class="wide-primary" type="button" @click="avatarLibraryOpen = true"><Plus :size="17" />Thêm avatar</button>
           <button class="asset-card" type="button" @click="addLayer('Avatar - Chinese Beauty Sale 3')"><img :src="templateHost" alt="Avatar presenter" /><span><strong>Chinese Beauty Sale 3</strong></span></button>
@@ -806,6 +838,7 @@ function selectVoice(option: string): void {
         <div ref="scenePosterElement" class="scene-poster live-frame scene-poster--perfume" :class="{ 'has-authored-scene': hasAuthoredScene, 'has-image-layer': hasImageLayer, 'has-text-layer': hasTextLayer }">
           <img v-if="previewImageLayer" :src="previewImageLayer.source" alt="Scene preview" :style="sceneMediaStyle" @pointerdown.stop="selectLayer(previewImageLayer.layer.id)" />
           <div v-for="layer in layers.filter((candidate) => candidate.kind === 'gif')" :key="`preview-gif-${layer.id}`" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
+          <div v-for="layer in previewLocalImageLayers" :key="`preview-image-${layer.id}`" class="scene-runtime-layer scene-runtime-media scene-local-image" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="imageSources[layer.source.mediaReferenceId!]" :alt="layer.name" /></div>
           <video v-for="layer in layers.filter((candidate) => candidate.kind === 'video' && candidate.source.mediaReferenceId && videoSources[candidate.source.mediaReferenceId])" :key="`preview-video-${layer.id}`" class="scene-runtime-layer scene-runtime-media scene-local-video" :src="videoSources[layer.source.mediaReferenceId!]" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" autoplay muted loop playsinline @pointerdown.stop="selectLayer(layer.id)" />
           <div v-if="hasTextLayer" class="scene-copy" @pointerdown.stop="selectLayer(layers.find((layer) => layer.kind === 'text')?.id ?? '')"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
           <div v-for="layer in layers" :key="`preview-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />

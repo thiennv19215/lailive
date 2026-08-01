@@ -3,9 +3,14 @@ import type { ProjectMediaReference, ProjectMediaStatus } from '../../src/shared
 import { projectMediaCheckSchema } from '../../src/shared/validation/projects';
 
 const MEDIA_TYPES: Record<string, string> = {
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
   '.mkv': 'video/x-matroska',
   '.mov': 'video/quicktime',
   '.mp4': 'video/mp4',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
   '.webm': 'video/webm',
 };
 
@@ -15,7 +20,7 @@ export function inspectMediaReferences(references: ProjectMediaReference[]): Pro
 }
 
 export function readMediaDataUrl(reference: ProjectMediaReference): string | null {
-  if (!fs.existsSync(reference.path) || reference.kind !== 'video') return null;
+  if (!fs.existsSync(reference.path) || !['image', 'video'].includes(reference.kind)) return null;
   const stat = fs.statSync(reference.path);
   if (!stat.isFile() || stat.size > 100 * 1024 * 1024) return null;
   const mimeType = MEDIA_TYPES[reference.path.slice(reference.path.lastIndexOf('.')).toLowerCase()] ?? 'application/octet-stream';

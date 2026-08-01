@@ -774,6 +774,13 @@ Continue reducing the template-center mismatch with additional independently sou
 - Desktop Browser QA at `1280x720` confirms the preview video renders at its canvas dimensions, no non-empty image alt text is rendered in the canvas, no failed-media panel appears for a valid source, document width fits the viewport, and console error/warning output is empty. Mobile was intentionally not changed or tested for this repair.
 - Validation: `pnpm exec eslint src/pages/ProjectStudioPage.vue` and `git diff --check` pass.
 
+## Session update - local image import
+
+- Added `Thêm ảnh từ máy` to the Studio background library. The native picker uses the typed media IPC boundary, reads the selected image into a data URL, creates a persisted image layer, selects it, and shows the filename in the source list.
+- Local image layers render on the 9:16 canvas and are reloaded from saved media references after reopening a project. Existing local video loading remains supported through the generalized media loader.
+- Validation: focused ESLint, `pnpm typecheck`, `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), and `git diff --check` pass.
+- Manual remaining evidence: choose a real image in the Windows Electron picker and confirm the image placement/transform in the running Studio and OBS Browser Source.
+
 ## Session update - Desktop Scene Runtime publish ordering
 
 - Root cause of the persistent desktop `Khong tai duoc nguon` card was confirmed: the renderer exposed the loopback asset URL before publishing the project scene to Scene Runtime. The first `/assets/<media-id>` request therefore returned 404, and the failed layer remained cached in the renderer even though the local MP4 existed.
