@@ -355,6 +355,11 @@ function sourceDisplayName(layer: StudioLayer): string {
   return layer.name;
 }
 
+function selectLayer(layerId: string): void {
+  const index = layers.value.findIndex((layer) => layer.id === layerId);
+  if (index >= 0) activeLayerIndex.value = index;
+}
+
 function buildSceneDocument(): ProjectSceneDocument {
   const base = clonePlain(persistedScene.value);
   return {
@@ -746,9 +751,9 @@ function selectVoice(option: string): void {
       <div v-if="notice" class="studio-notice"><Check :size="14" />{{ notice }}<button type="button" aria-label="Đóng thông báo" @click="notice = ''"><X :size="13" /></button></div>
       <div class="studio-grid">
         <div ref="scenePosterElement" class="scene-poster live-frame scene-poster--perfume" :class="{ 'has-authored-scene': hasAuthoredScene, 'has-image-layer': hasImageLayer, 'has-text-layer': hasTextLayer }">
-          <img v-if="previewImageLayer" :src="previewImageLayer.source" alt="Scene preview" :style="sceneMediaStyle" />
-          <div v-if="activeLayer?.kind === 'gif'" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="{ left: '10%', top: '30%', width: '80%', height: '30%', transform: activeSceneTransform }"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
-          <div v-if="hasTextLayer" class="scene-copy"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
+          <img v-if="previewImageLayer" :src="previewImageLayer.source" alt="Scene preview" :style="sceneMediaStyle" @pointerdown.stop="selectLayer(previewImageLayer.layer.id)" />
+          <div v-if="activeLayer?.kind === 'gif'" class="scene-runtime-layer scene-runtime-media" data-media-kind="gif" :style="{ left: '10%', top: '30%', width: '80%', height: '30%', transform: activeSceneTransform }" @pointerdown.stop="selectLayer(activeLayer.id)"><img class="scene-runtime-media-source" :src="flowerGif" alt="Flower GIF" /></div>
+          <div v-if="hasTextLayer" class="scene-copy" @pointerdown.stop="selectLayer(layers.find((layer) => layer.kind === 'text')?.id ?? '')"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
           <template v-if="activeLayer">
             <div class="scene-layer-toolbar" aria-label="Thứ tự lớp">
               <button type="button" aria-label="Đưa lên trên cùng" @click="moveActiveLayer('top')"><ArrowUpToLine :size="14" /></button>

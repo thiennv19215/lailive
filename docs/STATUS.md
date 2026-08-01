@@ -2,6 +2,12 @@
 
 Updated: 2026-08-01
 
+## Session update - direct canvas layer selection
+
+- Clicking a rendered image, GIF, or text region in Project Studio now selects its corresponding scene layer and updates the layer toolbar/inspector immediately.
+- Source-list selection remains available, while canvas interaction no longer requires returning to the `Nguồn` panel.
+- Validation passes: Studio inspector smoke, `pnpm typecheck`, and focused Studio ESLint.
+
 ## Session update - meaningful source names
 
 - Project Studio source rows now preserve asset names for newly added avatar, background, video, GIF, and sticker layers instead of generic numeric labels.
