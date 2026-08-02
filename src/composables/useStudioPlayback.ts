@@ -37,7 +37,7 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     const layer = script?.mediaLayerId ? options.layers.value.find((candidate) => candidate.id === script.mediaLayerId) : undefined;
     const audio = script?.audioLayerId ? options.layers.value.find((candidate) => candidate.id === script.audioLayerId) : undefined;
     const motion = options.avatarVideo.value;
-    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), resumeActiveMedia: current.resumeActiveMedia, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: script?.role === 'idle' || layer?.loop === true, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
+    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), resumeActiveMedia: current.resumeActiveMedia, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: false, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
   }
   function publish(): Promise<void> {
     if (!options.projectLoaded.value) return Promise.resolve();
@@ -57,6 +57,15 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     sync();
   }
   function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }
+  function removeForLayer(layerId: string): void {
+    const removedActive = snapshot.value.activeLayerId === layerId || snapshot.value.activeAudioLayerId === layerId || snapshot.value.activeAvatarLayerId === layerId;
+    const remaining = scripts().filter((script) => script.mediaLayerId !== layerId && script.audioLayerId !== layerId && script.avatarLayerId !== layerId);
+    if (remaining.length === scripts().length) return;
+    scripts().splice(0, scripts().length, ...remaining);
+    normalize();
+    if (removedActive) controller.stop();
+    sync();
+  }
   function move(index: number, delta: number): void { const target = index + delta; if (target < 0 || target >= scripts().length) return; [scripts()[index], scripts()[target]] = [scripts()[target]!, scripts()[index]!]; normalize(); sync(); }
   function normalize(): void { scripts().forEach((script, order) => { script.order = order; }); }
   function toggle(): void { options.scene.value.preparedScriptSettings.enabled = !options.scene.value.preparedScriptSettings.enabled; sync(); }
@@ -82,6 +91,10 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     if (!current.activeScriptId && previous.activeScriptId) cancelTts();
     void publish();
   });
-  onBeforeUnmount(() => { cancelTts(); unsubscribe(); controller.dispose(); });
-  return { snapshot, scripts, sync, publish, add, remove, move, normalize, toggle, startSequence: (id?: string) => controller.startSequence(id), playScript: (id: string) => controller.playScript(id), playRole: (role: PreparedScriptRole) => controller.playRole(role), pause: () => controller.pause(), resume: () => controller.resume(), skip: () => controller.skip(), stop: () => { cancelTts(); return controller.stop(); }, ready: (scriptId: string, revision: number) => controller.onReady(scriptId, revision), ended: (scriptId: string, revision: number) => controller.onEnded(scriptId, revision), error: (scriptId: string, revision: number, message: string) => controller.onError(scriptId, revision, message) };
+  const unsubscribeRuntimeEnded = globalThis.window.desktopApi.sceneRuntime.onPlaybackEnded((payload) => {
+    const event = payload as { scriptId?: unknown; playbackRevision?: unknown };
+    if (typeof event.scriptId === 'string' && typeof event.playbackRevision === 'number') controller.onEnded(event.scriptId, event.playbackRevision);
+  });
+  onBeforeUnmount(() => { cancelTts(); unsubscribe(); unsubscribeRuntimeEnded(); controller.dispose(); });
+  return { snapshot, scripts, sync, publish, add, remove, removeForLayer, move, normalize, toggle, startSequence: (id?: string) => controller.startSequence(id), playScript: (id: string) => controller.playScript(id), playRole: (role: PreparedScriptRole) => controller.playRole(role), pause: () => controller.pause(), resume: () => controller.resume(), skip: () => controller.skip(), stop: () => { cancelTts(); return controller.stop(); }, ready: (scriptId: string, revision: number) => controller.onReady(scriptId, revision), ended: (scriptId: string, revision: number) => controller.onEnded(scriptId, revision), error: (scriptId: string, revision: number, message: string) => controller.onError(scriptId, revision, message) };
 }

@@ -296,6 +296,9 @@ app.whenReady().then(async () => {
       if (latestLog.level === 'warn' || latestLog.level === 'error') diagnosticsService?.recordThrottled(`scene:browser-${latestLog.level}`, 10_000, { level: latestLog.level, source: 'scene', message: 'Scene browser reported a runtime issue.', details: { browserLevel: latestLog.level } });
     }
   }));
+  removeInternalDiagnostics.push(sceneRuntimeService.subscribePlaybackEnded((event) => {
+    mainWindow?.webContents.send(IPC_CHANNELS.sceneRuntimePlaybackEnded, event);
+  }));
   allowWindowClose = database.get<boolean>('app.skip-close-confirmation')?.value === true;
 
   if (smokeMode) {

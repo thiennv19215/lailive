@@ -1006,3 +1006,10 @@ Continue reducing the template-center mismatch with additional independently sou
 - New avatar uploads are now ordinary visible avatar layers until an operator explicitly assigns a motion state. Hydration and synchronization repair duplicate state assignments by retaining the frontmost assignment and clearing later duplicates, then persist the repair.
 - The avatar state manager no longer enters an error state when no MP4 motion has been assigned yet.
 - Validation: focused ESLint and `pnpm typecheck` pass; 47 focused avatar-state, project-validation, and playback assertions pass.
+
+## Session update - timeline cleanup and sequential waiting videos
+
+- Deleting a Studio source now removes every prepared Timeline item that references it (media, attached audio, or avatar), normalizes the remaining order, and stops playback if the deleted source was active.
+- Waiting Timeline media no longer loops itself. When one video finishes, Studio and the loopback Browser Source both report the matching revision and advance to the next waiting script; the sequence stops only after the final waiting item.
+- Browser Source completion callbacks are schema-validated, limited to `127.0.0.1`, and rejected if they do not match the current script, layer, and playback revision.
+- Validation: `pnpm typecheck`, focused prepared-playback and Scene Runtime tests, and `git diff --check` pass.

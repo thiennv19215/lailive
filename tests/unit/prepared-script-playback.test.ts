@@ -24,6 +24,18 @@ describe('prepared script playback controller', () => {
     expect(controller.snapshot()).toMatchObject({ activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null });
   });
 
+  it('moves from one waiting video to the next instead of looping the first video', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [
+      settings.scripts[0]!,
+      { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 1, mediaLayerId: 'video-r2' },
+    ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
+    controller.startSequence();
+    const firstRevision = controller.snapshot().playbackRevision;
+    controller.onEnded('r1', firstRevision);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
+  });
+
   it('queues after-current scripts while immediate scripts interrupt', () => {
     const controller = new PreparedScriptPlaybackController(); controller.configure(settings, layers); controller.startSequence();
     expect(controller.playScript('r2')).toBe(true);

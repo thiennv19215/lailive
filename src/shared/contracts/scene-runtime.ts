@@ -46,6 +46,14 @@ export interface SceneRuntimeBrowserLog {
   timestamp: string;
 }
 
+// Sent by the loopback Browser Source when the currently selected timeline
+// media reaches its end. The renderer verifies the revision before advancing.
+export interface SceneRuntimePlaybackEnded {
+  scriptId: string;
+  layerId: string;
+  playbackRevision: number;
+}
+
 export interface SceneRuntimeStatus {
   running: boolean;
   host: '127.0.0.1';

@@ -33,3 +33,9 @@ export const sceneRuntimeLogSchema = z.object({
   level: z.enum(['debug', 'info', 'warn', 'error']),
   message: z.string().trim().min(1).max(2000),
 });
+
+export const sceneRuntimePlaybackEndedSchema = z.object({
+  scriptId: z.string().trim().min(1).max(200),
+  layerId: z.string().trim().min(1).max(200),
+  playbackRevision: z.number().int().min(0),
+});

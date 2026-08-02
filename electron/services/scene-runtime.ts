@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import http, { type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { sceneRuntimeLogSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema } from '../../src/shared/validation/scene-runtime';
-import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimeState, type SceneRuntimeStatus } from '../../src/shared/contracts/scene-runtime';
+import { sceneRuntimeLogSchema, sceneRuntimePlaybackEndedSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema } from '../../src/shared/validation/scene-runtime';
+import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimePlaybackEnded, type SceneRuntimeState, type SceneRuntimeStatus } from '../../src/shared/contracts/scene-runtime';
 import type { ProjectLayerAssetId } from '../../src/shared/contracts/projects';
 import type { AvatarSpeechState } from '../../src/shared/contracts/queue';
 
@@ -73,6 +73,7 @@ export class SceneRuntimeService {
   private readonly readyClients = new Set<string>();
   private readonly logs: SceneRuntimeBrowserLog[] = [];
   private readonly listeners = new Set<(status: SceneRuntimeStatus) => void>();
+  private readonly playbackEndedListeners = new Set<(event: SceneRuntimePlaybackEnded) => void>();
 
   constructor(private readonly options: SceneRuntimeOptions) {}
 
@@ -127,6 +128,11 @@ export class SceneRuntimeService {
     return () => this.listeners.delete(listener);
   }
 
+  subscribePlaybackEnded(listener: (event: SceneRuntimePlaybackEnded) => void): () => void {
+    this.playbackEndedListeners.add(listener);
+    return () => this.playbackEndedListeners.delete(listener);
+  }
+
   async close(): Promise<void> {
     for (const client of this.clients.keys()) client.end();
     this.clients.clear();
@@ -137,6 +143,7 @@ export class SceneRuntimeService {
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     this.emitStatus();
     this.listeners.clear();
+    this.playbackEndedListeners.clear();
   }
 
   private writeEvent(response: ServerResponse, event: SceneRuntimeEvent): void {
@@ -200,6 +207,14 @@ export class SceneRuntimeService {
         this.logs.push({ ...parsed, timestamp: new Date().toISOString() });
         while (this.logs.length > 100) this.logs.shift();
         this.emitStatus();
+        return json(response, 200, { ok: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/playback-ended') {
+        const event = sceneRuntimePlaybackEndedSchema.parse(await readJson(request));
+        const presentation = this.state?.presentation;
+        // Ignore delayed browser callbacks from an old script or media node.
+        if (presentation?.activeScriptId !== event.scriptId || presentation.activeLayerId !== event.layerId || presentation.playbackRevision !== event.playbackRevision) return json(response, 202, { ok: false });
+        for (const listener of this.playbackEndedListeners) listener(event);
         return json(response, 200, { ok: true });
       }
       json(response, 404, { error: 'Not found.' });

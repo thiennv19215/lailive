@@ -73,6 +73,7 @@ export interface DesktopApi {
   sceneRuntime: {
     getStatus(): Promise<SceneRuntimeStatus>;
     publish(scene: ProjectSceneDocument, avatarState: AvatarSpeechState, presentation?: ScenePresentationState): Promise<SceneRuntimeEvent>;
+    onPlaybackEnded(listener: (event: SceneRuntimePlaybackEnded) => void): () => void;
   };
   obs: {
     getConfig(): Promise<ObsConfig>;
@@ -119,7 +120,7 @@ import type { ProjectCreateInput, ProjectMediaKind, ProjectMediaReference, Proje
 import type { AiConnectionResult, AiProviderConfig, AiProviderConfigInput, AiRawGenerateRequest, AiRawGenerateResult } from './ai';
 import type { TtsConnectionResult, TtsProviderConfig, TtsProviderConfigInput, TtsSynthesisResult, TtsSynthesizeInput } from './tts';
 import type { AvatarSpeechState } from './queue';
-import type { ScenePresentationState, SceneRuntimeEvent, SceneRuntimeStatus } from './scene-runtime';
+import type { ScenePresentationState, SceneRuntimeEvent, SceneRuntimePlaybackEnded, SceneRuntimeStatus } from './scene-runtime';
 import type { ObsConfig, ObsConfigInput, ObsConnectionResult, ObsOutputResult, ObsStatus } from './obs';
 import type { ShopActionResult, ShopBrowserCandidate, ShopConfig, ShopOpenResult, ShopProductMapping, ShopScheduleItem, ShopSnapshot } from './shop';
 import type { DiagnosticLogEntry, DiagnosticLogQuery, DiagnosticsSnapshot, QueueDiagnosticEvent } from './diagnostics';

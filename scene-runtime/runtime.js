@@ -65,6 +65,14 @@ function createLayerNode(layer, state) {
       media.autoplay = true;
       media.preload = 'auto';
       if (media instanceof HTMLVideoElement) media.playsInline = true;
+      media.addEventListener('ended', () => {
+        const presentation = currentState?.presentation;
+        if (!presentation || presentation.activeLayerId !== layer.id || !presentation.activeScriptId) return;
+        void fetch('/playback-ended', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ scriptId: presentation.activeScriptId, layerId: layer.id, playbackRevision: presentation.playbackRevision }),
+        }).catch(() => undefined);
+      });
     }
     media.addEventListener(media instanceof HTMLMediaElement ? 'loadeddata' : 'load', () => renderLayerChroma(layer.id));
     root.append(media);
@@ -124,7 +132,8 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
       media.style.borderRadius = layer.kind === 'image' ? `${state.scene.imageSettings.radius}px` : '0';
       if (media instanceof HTMLMediaElement) {
         const active = managed && (presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
-        media.loop = managed ? (active ? (presentation.activeAudioLayerId === layer.id ? false : presentation.activeLoop) : false) : layer.loop;
+        // Timeline media must end so its callback can activate the next script.
+        media.loop = managed ? false : layer.loop;
         media.muted = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioMuted : presentation.activeMuted) : layer.muted;
         media.volume = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioVolume : presentation.activeVolume) : layer.volume;
         const revision = String(presentation.playbackRevision);

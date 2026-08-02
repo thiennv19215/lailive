@@ -164,6 +164,27 @@ describe('SceneRuntimeService', () => {
     await stream.body?.cancel();
   });
 
+  it('accepts an ended callback only for the currently active timeline media', async () => {
+    service = createService();
+    const { url } = await service.start();
+    if (!url) throw new Error('Runtime URL was not assigned.');
+    const scene = createEmptyScene();
+    service.publish(scene, 'idle', {
+      mode: 'playing', activeScriptId: 'script-1', activeLayerId: 'video-1', activeAudioLayerId: null,
+      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null,
+      managedLayerIds: ['video-1'], playbackRevision: 7, resumeActiveMedia: false, activePaused: false,
+      activeMuted: false, activeVolume: 1, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0,
+    });
+    const received: unknown[] = [];
+    const unsubscribe = service.subscribePlaybackEnded((event) => received.push(event));
+    const stale = await fetch(`${url}playback-ended`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scriptId: 'script-1', layerId: 'video-1', playbackRevision: 6 }) });
+    expect(stale.status).toBe(202);
+    const current = await fetch(`${url}playback-ended`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scriptId: 'script-1', layerId: 'video-1', playbackRevision: 7 }) });
+    expect(current.status).toBe(200);
+    expect(received).toEqual([{ scriptId: 'script-1', layerId: 'video-1', playbackRevision: 7 }]);
+    unsubscribe();
+  });
+
   it('emits internal status transitions without retaining unsubscribed listeners', async () => {
     service = createService();
     const statuses: Array<{ running: boolean; connectedClients: number; readyClients: number; logs: number }> = [];

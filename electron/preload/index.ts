@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi } from '../../src/shared/contracts/desktop-api';
 import { IPC_CHANNELS } from '../../src/shared/contracts/ipc-channels';
+import { sceneRuntimePlaybackEndedSchema } from '../../src/shared/validation/scene-runtime';
 
 const api: DesktopApi = {
   app: {
@@ -73,6 +74,14 @@ const api: DesktopApi = {
   sceneRuntime: {
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimeGetStatus),
     publish: (scene, avatarState, presentation) => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimePublish, { scene, avatarState, presentation }),
+    onPlaybackEnded: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const parsed = sceneRuntimePlaybackEndedSchema.safeParse(payload);
+        if (parsed.success) handler(parsed.data);
+      };
+      ipcRenderer.on(IPC_CHANNELS.sceneRuntimePlaybackEnded, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.sceneRuntimePlaybackEnded, listener);
+    },
   },
   obs: {
     getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.obsGetConfig),

@@ -201,6 +201,7 @@ const {
   toggle: togglePlaylist,
   add: addPreparedScript,
   remove: removePreparedScript,
+  removeForLayer: removePreparedScriptsForLayer,
   move: movePreparedScript,
   startSequence: playbackStart,
   playScript: playbackPlayScript,
@@ -518,9 +519,13 @@ function clonePlain<T>(value: T): T {
 }
 
 function removeLayer(index: number): void {
+  const layer = layers.value[index];
+  if (!layer) return;
+  removePreparedScriptsForLayer(layer.id);
   layers.value.splice(index, 1);
   if (activeLayerIndex.value === index) activeLayerIndex.value = null;
   else if (activeLayerIndex.value !== null && activeLayerIndex.value > index) activeLayerIndex.value -= 1;
+  notice.value = `Đã xoá nguồn “${layer.name}” và mọi mục Timeline dùng nguồn này.`;
 }
 
 function sourceDisplayName(layer: StudioLayer): string {

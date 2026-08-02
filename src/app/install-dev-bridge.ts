@@ -437,6 +437,7 @@ export function installDevBridge(): void {
         sceneRuntimeLastPublishedAt = sentAt;
         return event;
       },
+      onPlaybackEnded: () => () => undefined,
     },
     obs: {
       getConfig: async () => ({ ...obsConfig, hasPassword: Boolean(obsConfig.password) }),
