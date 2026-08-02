@@ -21,6 +21,8 @@ The authoritative phase definitions and exit criteria are in `NEW_REPO_FULL_PLAN
 
 ## Prepared Video Room playback slice (2026-08-01)
 
+The next manual-first expansion is specified in `docs/MANUAL_PREPARED_SCRIPT_PLAN.md`. It upgrades the ordered media playlist into directly addressable prepared scripts with video/audio/TTS playback, avatar talking synchronization, interrupt/completion policies, operator hotkeys, persistence migration, and OBS evidence gates.
+
 - Schema v12 stores an ordered, bounded playlist of enabled layer IDs; existing scene-layer loop/mute/volume fields remain canonical and v11 idle assignments migrate without restoring response behavior.
 - The renderer-owned controller now has stopped/starting/idle/paused/loading/recovering/error states, exact playback-revision ended guards, R1→R2→R3→R1 cycling, one-active-item semantics, bounded missing-media recovery, retry-to-R1, and session-only short-playlist/rotation warnings.
 - Studio uses typed video/audio media selection and stable managed media components; controller snapshots publish active layer, revision, pause, mute, volume, and loop to the loopback runtime. Browser Source accepts only newer server/playback revisions and pauses inactive managed media before activating one item.

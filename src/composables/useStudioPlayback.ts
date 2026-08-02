@@ -1,154 +1,76 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue';
-import { ManualVideoPlaybackController, type ManualVideoPlaybackSnapshot } from '../modules/playback/manual-video-playback';
-import type { ProjectMediaStatus, ProjectSceneDocument, ProjectSceneLayer } from '../shared/contracts/projects';
+import { PreparedScriptPlaybackController, type PreparedScriptPlaybackSnapshot } from '../modules/playback/prepared-script-playback';
+import { playTtsResult } from '../modules/tts/playback';
+import type { ProjectMediaStatus, ProjectPreparedScript, ProjectSceneDocument, ProjectSceneLayer } from '../shared/contracts/projects';
 import type { ScenePresentationState } from '../shared/contracts/scene-runtime';
+import type { AvatarSpeechState } from '../shared/contracts/queue';
 
 type StudioPlaybackOptions = {
-  scene: Ref<ProjectSceneDocument>;
-  layers: Ref<ProjectSceneLayer[]>;
-  mediaStatuses: Ref<ProjectMediaStatus[]>;
-  projectLoaded: Ref<boolean>;
-  buildSceneDocument: () => ProjectSceneDocument;
-  onPublishError: (message: string) => void;
+  scene: Ref<ProjectSceneDocument>; layers: Ref<ProjectSceneLayer[]>; mediaStatuses: Ref<ProjectMediaStatus[]>; projectLoaded: Ref<boolean>;
+  avatarState: Ref<AvatarSpeechState>; buildSceneDocument: () => ProjectSceneDocument; onPublishError: (message: string) => void;
 };
-
-const EMPTY_SNAPSHOT: ManualVideoPlaybackSnapshot = {
-  mode: 'stopped',
-  activeLayerId: null,
-  activePlaylistIndex: null,
-  playbackRevision: 0,
-  attemptedLayerIds: [],
-  sessionHistory: [],
-  warnings: [],
-  errorMessage: null,
-  activeSettings: null,
-};
+const EMPTY_SNAPSHOT: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
 
 export function useStudioPlayback(options: StudioPlaybackOptions) {
-  const snapshot = ref<ManualVideoPlaybackSnapshot>(EMPTY_SNAPSHOT);
-  const controller = new ManualVideoPlaybackController();
+  const snapshot = ref<PreparedScriptPlaybackSnapshot>(EMPTY_SNAPSHOT);
+  const controller = new PreparedScriptPlaybackController();
   let publishInFlight = false;
   let publishQueued = false;
-
-  function items() {
-    return options.scene.value.manualPlaybackSettings.playlist;
-  }
+  let ttsAbort: AbortController | null = null;
+  const scripts = () => options.scene.value.preparedScriptSettings.scripts;
+  const activeScript = (current = snapshot.value) => scripts().find((script) => script.id === current.activeScriptId);
 
   function sync(): void {
-    controller.configure(
-      options.scene.value.manualPlaybackSettings,
-      options.layers.value
-        .filter((layer) => (layer.kind === 'video' || layer.kind === 'audio') && Boolean(layer.source.mediaReferenceId || layer.source.assetId))
-        .map((layer) => ({
-          id: layer.id,
-          kind: layer.kind,
-          loop: layer.loop,
-          muted: layer.muted,
-          volume: layer.volume,
-          available: layer.source.type === 'builtin' || options.mediaStatuses.value.find((status) => status.id === layer.source.mediaReferenceId)?.exists !== false,
-        })),
-    );
+    controller.configure(options.scene.value.preparedScriptSettings, options.layers.value
+      .filter((layer) => layer.kind === 'video' || layer.kind === 'audio')
+      .map((layer) => ({ id: layer.id, kind: layer.kind, loop: layer.loop, muted: layer.muted, volume: layer.volume, available: layer.source.type === 'builtin' || options.mediaStatuses.value.find((status) => status.id === layer.source.mediaReferenceId)?.exists !== false })));
   }
-
-  function presentation(current: ManualVideoPlaybackSnapshot): ScenePresentationState {
-    return {
-      mode: current.mode,
-      activeLayerId: current.activeLayerId,
-      managedLayerIds: items().map((item) => item.layerId),
-      playbackRevision: current.playbackRevision,
-      activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error',
-      activeMuted: current.activeSettings?.muted ?? true,
-      activeVolume: current.activeSettings?.volume ?? 0,
-      activeLoop: current.activeSettings?.loop ?? false,
-    };
+  function presentation(current: PreparedScriptPlaybackSnapshot): ScenePresentationState {
+    const script = activeScript(current);
+    const layer = script?.mediaLayerId ? options.layers.value.find((candidate) => candidate.id === script.mediaLayerId) : undefined;
+    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, managedLayerIds: scripts().flatMap((item) => item.mediaLayerId ? [item.mediaLayerId] : []), playbackRevision: current.playbackRevision, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: layer?.loop ?? false };
   }
-
   async function publish(current = snapshot.value): Promise<void> {
     if (!options.projectLoaded.value) return;
-    if (publishInFlight) {
-      publishQueued = true;
-      return;
-    }
-
+    if (publishInFlight) { publishQueued = true; return; }
     publishInFlight = true;
+    try { await globalThis.window.desktopApi.sceneRuntime.publish(structuredClone(options.buildSceneDocument()), options.avatarState.value, structuredClone(presentation(current))); }
+    catch (error) { options.onPublishError(error instanceof Error ? error.message : String(error)); }
+    finally { publishInFlight = false; if (publishQueued) { publishQueued = false; void publish(); } }
+  }
+  function add(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null): void {
+    if (scripts().length >= 20) return options.onPublishError('Kịch bản chờ đã đủ 20 mục.');
+    const order = scripts().length;
+    const layer = mediaLayerId ? options.layers.value.find((candidate) => candidate.id === mediaLayerId) : undefined;
+    scripts().push({ id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? 'Thoại chờ'}`, enabled: true, order, playbackType: type, mediaLayerId, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: 'immediate', completionMode: 'next' });
+    sync();
+  }
+  function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }
+  function move(index: number, delta: number): void { const target = index + delta; if (target < 0 || target >= scripts().length) return; [scripts()[index], scripts()[target]] = [scripts()[target]!, scripts()[index]!]; normalize(); sync(); }
+  function normalize(): void { scripts().forEach((script, order) => { script.order = order; }); }
+  function toggle(): void { options.scene.value.preparedScriptSettings.enabled = !options.scene.value.preparedScriptSettings.enabled; sync(); }
+  function cancelTts(): void { ttsAbort?.abort(); ttsAbort = null; void globalThis.window.desktopApi.tts.cancelAll(); }
+  async function startTts(script: ProjectPreparedScript, revision: number): Promise<void> {
+    cancelTts();
+    const abort = new AbortController(); ttsAbort = abort;
     try {
-      const scene = JSON.parse(JSON.stringify(options.buildSceneDocument())) as ProjectSceneDocument;
-      const scenePresentation = JSON.parse(JSON.stringify(presentation(current))) as ScenePresentationState;
-      await globalThis.window.desktopApi.sceneRuntime.publish(scene, 'idle', scenePresentation);
+      const result = await globalThis.window.desktopApi.tts.synthesize({ requestId: `prepared-${script.id}-${revision}`, text: script.speechText, voice: options.scene.value.ttsSettings.voice, speed: options.scene.value.ttsSettings.speed, volume: options.scene.value.ttsSettings.volume, timeoutMs: options.scene.value.ttsSettings.timeoutMs });
+      if (abort.signal.aborted || snapshot.value.activeScriptId !== script.id || snapshot.value.playbackRevision !== revision) return;
+      controller.onReady(script.id, revision);
+      await playTtsResult(result, options.scene.value.ttsSettings, abort.signal);
+      controller.onEnded(script.id, revision);
     } catch (error) {
-      options.onPublishError(error instanceof Error ? error.message : String(error));
-    } finally {
-      publishInFlight = false;
-      if (publishQueued) {
-        publishQueued = false;
-        void publish();
-      }
-    }
+      if (!abort.signal.aborted) controller.onError(script.id, revision, error instanceof Error ? error.message : 'TTS không phát được.');
+    } finally { if (ttsAbort === abort) ttsAbort = null; }
   }
-
-  function assign(layerId: string): void {
-    if (!options.layers.value.some((layer) => layer.id === layerId && (layer.kind === 'video' || layer.kind === 'audio'))) return;
-    if (items().some((item) => item.layerId === layerId)) return;
-    if (items().length >= 20) {
-      options.onPublishError('Playlist đã đủ 20 mục.');
-      return;
-    }
-    items().push({ layerId, enabled: true });
-    options.scene.value.manualPlaybackSettings.enabled = true;
-    sync();
-  }
-
-  function remove(index: number): void {
-    items().splice(index, 1);
-    sync();
-  }
-
-  function move(index: number, delta: number): void {
-    const target = index + delta;
-    if (target < 0 || target >= items().length) return;
-    [items()[index], items()[target]] = [items()[target]!, items()[index]!];
-    sync();
-  }
-
-  function toggleItem(index: number): void {
-    const item = items()[index];
-    if (item) item.enabled = !item.enabled;
-    sync();
-  }
-
-  function toggle(): void {
-    options.scene.value.manualPlaybackSettings.enabled = !options.scene.value.manualPlaybackSettings.enabled;
-    sync();
-  }
-
   const unsubscribe = controller.subscribe((current) => {
-    snapshot.value = current;
+    const previous = snapshot.value; snapshot.value = current;
+    const script = activeScript(current);
+    options.avatarState.value = script && (script.playbackType === 'audio' || script.playbackType === 'tts') && ['loading', 'playing', 'paused'].includes(current.mode) ? 'talking' : 'idle';
+    if (script?.playbackType === 'tts' && current.mode === 'loading' && (previous.activeScriptId !== script.id || previous.playbackRevision !== current.playbackRevision)) void startTts(script, current.playbackRevision);
+    if (!current.activeScriptId && previous.activeScriptId) cancelTts();
     void publish(current);
   });
-
-  onBeforeUnmount(() => {
-    unsubscribe();
-    controller.dispose();
-  });
-
-  return {
-    snapshot,
-    items,
-    sync,
-    publish,
-    assign,
-    remove,
-    move,
-    toggleItem,
-    toggle,
-    start: () => controller.start(),
-    pause: () => controller.pause(),
-    resume: () => controller.resume(),
-    skip: () => controller.skip(),
-    stop: () => controller.stop(),
-    retry: () => controller.retry(),
-    ready: (layerId: string, revision: number) => controller.onReady(layerId, revision),
-    ended: (layerId: string, revision: number) => controller.onEnded(layerId, revision),
-    error: (layerId: string, revision: number, message: string) => controller.onError(layerId, revision, message),
-  };
+  onBeforeUnmount(() => { cancelTts(); unsubscribe(); controller.dispose(); });
+  return { snapshot, scripts, sync, publish, add, remove, move, normalize, toggle, startSequence: (id?: string) => controller.startSequence(id), playScript: (id: string) => controller.playScript(id), pause: () => controller.pause(), resume: () => controller.resume(), skip: () => controller.skip(), stop: () => { cancelTts(); return controller.stop(); }, ready: (scriptId: string, revision: number) => controller.onReady(scriptId, revision), ended: (scriptId: string, revision: number) => controller.onEnded(scriptId, revision), error: (scriptId: string, revision: number, message: string) => controller.onError(scriptId, revision, message) };
 }

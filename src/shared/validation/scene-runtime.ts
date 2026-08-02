@@ -5,7 +5,8 @@ export const sceneRuntimePublishSchema = z.object({
   scene: projectSceneSchema,
   avatarState: z.enum(['idle', 'talking']),
   presentation: z.object({
-    mode: z.enum(['scene', 'stopped', 'starting', 'idle', 'paused', 'loading', 'recovering', 'error']),
+    mode: z.enum(['scene', 'stopped', 'starting', 'idle', 'playing', 'paused', 'loading', 'recovering', 'error']),
+    activeScriptId: z.string().trim().min(1).max(120).nullable(),
     activeLayerId: z.string().trim().min(1).max(120).nullable(),
     managedLayerIds: z.array(z.string().trim().min(1).max(120)).max(40),
     playbackRevision: z.number().int().min(0),
@@ -13,7 +14,7 @@ export const sceneRuntimePublishSchema = z.object({
     activeMuted: z.boolean(),
     activeVolume: z.number().finite().min(0).max(1),
     activeLoop: z.boolean(),
-  }).optional().default({ mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false }),
+  }).optional().default({ mode: 'scene', activeScriptId: null, activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false }),
 });
 
 export const sceneRuntimeReadySchema = z.object({

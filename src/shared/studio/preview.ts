@@ -33,7 +33,7 @@ export function resolvePreviewSource(layer: ProjectSceneLayer, loadedMediaIds: R
 }
 
 export function isPreviewRenderable(layer: ProjectSceneLayer, loadedMediaIds: ReadonlySet<string> = new Set()): boolean {
-  return layer.source.type === 'text' || resolvePreviewSource(layer, loadedMediaIds) !== null;
+  return layer.kind === 'text' || resolvePreviewSource(layer, loadedMediaIds) !== null;
 }
 
 export interface PreviewLayerBox {
@@ -46,6 +46,7 @@ export interface PreviewLayerBox {
 export function previewLayerBox(layer: ProjectSceneLayer, imageIndex = 0): PreviewLayerBox {
   if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
   if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
+  if (layer.kind === 'avatar') return { left: 42, top: 25, width: 54, height: 72 };
   if (imageIndex === 1) return { left: 8, top: 57, width: 84, height: 24 };
   return { left: 0, top: 0, width: 100, height: 100 };
 }

@@ -138,7 +138,7 @@ async function runViewport(name, viewport, port) {
     await page.getByRole('button', { name: 'Chữ đậm' }).click();
     await page.getByRole('button', { name: 'Chữ nghiêng' }).click();
 
-    const preview = page.locator('.scene-copy > strong');
+    const preview = page.locator('.scene-runtime-text.is-selected');
     const editedState = await preview.evaluate((element) => {
       const style = globalThis.getComputedStyle(element);
       return {

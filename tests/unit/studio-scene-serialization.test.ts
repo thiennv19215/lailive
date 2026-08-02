@@ -29,6 +29,7 @@ function preparePlainPresentation(
 ): ScenePresentationState {
   return {
     mode,
+    activeScriptId: null,
     activeLayerId: activeLayerId ? String(activeLayerId) : null,
     managedLayerIds: enabled ? playlistLayerIds.map((id) => String(id)) : [],
     playbackRevision: Number(playbackRevision),

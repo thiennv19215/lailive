@@ -1,4 +1,4 @@
-export const PROJECT_SCHEMA_VERSION = 12 as const;
+export const PROJECT_SCHEMA_VERSION = 13 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -72,11 +72,33 @@ export interface ProjectLivestreamSettings {
 export interface ProjectManualPlaylistItem {
   layerId: string;
   enabled: boolean;
+  role?: 'idle' | 'response';
 }
 
 export interface ProjectManualPlaybackSettings {
   enabled: boolean;
   playlist: ProjectManualPlaylistItem[];
+}
+
+export type PreparedScriptPlaybackType = 'video' | 'audio' | 'tts';
+export type PreparedScriptInterruptMode = 'immediate' | 'after-current';
+export type PreparedScriptCompletionMode = 'stop' | 'next' | 'resume-sequence';
+
+export interface ProjectPreparedScript {
+  id: string;
+  name: string;
+  enabled: boolean;
+  order: number;
+  playbackType: PreparedScriptPlaybackType;
+  mediaLayerId: string | null;
+  speechText: string;
+  interruptMode: PreparedScriptInterruptMode;
+  completionMode: PreparedScriptCompletionMode;
+}
+
+export interface ProjectPreparedScriptSettings {
+  enabled: boolean;
+  scripts: ProjectPreparedScript[];
 }
 
 export interface ProjectSceneLayer {
@@ -115,6 +137,7 @@ export interface ProjectSceneDocument {
   avatarSettings: ProjectAvatarSettings;
   livestreamSettings: ProjectLivestreamSettings;
   manualPlaybackSettings: ProjectManualPlaybackSettings;
+  preparedScriptSettings: ProjectPreparedScriptSettings;
   aiSettings: AiReplySettings;
   ttsSettings: TtsProjectSettings;
   products: ProductCatalogItem[];
@@ -186,6 +209,10 @@ export function createEmptyScene(): ProjectSceneDocument {
     manualPlaybackSettings: {
       enabled: false,
       playlist: [],
+    },
+    preparedScriptSettings: {
+      enabled: true,
+      scripts: [],
     },
     aiSettings: createDefaultAiReplySettings(),
     ttsSettings: createDefaultTtsProjectSettings(),

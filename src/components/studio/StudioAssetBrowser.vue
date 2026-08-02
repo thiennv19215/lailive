@@ -3,7 +3,6 @@ import { Image, Plus, Sticker, Type, Video } from '@lucide/vue';
 import { ref } from 'vue';
 import beautyCream from '../../assets/mock/beauty-cream.jpg';
 import beautyStudio from '../../assets/mock/beauty-studio.jpg';
-import templateHost from '../../assets/mock/template-host-v2.jpg';
 import type { StudioToolName } from './studio-types';
 
 defineProps<{ activeTool: StudioToolName }>();
@@ -13,7 +12,7 @@ const emit = defineEmits<{
   addLocalAudio: [];
   addLocalImage: [];
   addLocalVideo: [];
-  openAvatarLibrary: [];
+  openAvatarUploader: [];
 }>();
 
 const backgroundSection = ref<'For You' | 'Của tôi'>('For You');
@@ -28,8 +27,8 @@ const videoCategories: Array<'Tất cả' | 'Default'> = ['Tất cả', 'Default
   <section class="asset-browser">
     <button v-if="activeTool === 'Hình nền'" class="wide-primary compact" type="button" @click="emit('addLocalImage')"><Plus :size="17" />Thêm ảnh từ máy</button>
     <template v-if="activeTool === 'Avatar'">
-      <button class="wide-primary" type="button" @click="emit('openAvatarLibrary')"><Plus :size="17" />Thêm avatar</button>
-      <button class="asset-card" type="button" @click="emit('addLayer', 'Avatar - Chinese Beauty Sale 3')"><img :src="templateHost" alt="Avatar presenter" /><span><strong>Chinese Beauty Sale 3</strong></span></button>
+      <button class="wide-primary" type="button" @click="emit('openAvatarUploader')"><Plus :size="17" />Tải avatar của bạn</button>
+      <div class="asset-empty avatar-empty"><Image :size="31" /><strong>Chưa có avatar cá nhân</strong><span>Tải ảnh hoặc video nhân vật của bạn. Avatar sẽ được đặt gọn ở cạnh phải canvas và vẫn có thể kéo, phóng to hoặc thu nhỏ.</span></div>
     </template>
     <template v-else-if="activeTool === 'Hình nền'">
       <div class="panel-tabs"><button type="button" :class="{ active: backgroundSection === 'For You' }" @click="backgroundSection = 'For You'">Hình nền</button><button type="button" :class="{ active: backgroundSection === 'Của tôi' }" @click="backgroundSection = 'Của tôi'">Của tôi</button></div>

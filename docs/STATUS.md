@@ -2,6 +2,18 @@
 
 Updated: 2026-08-01
 
+## Session update - direct avatar preview controls
+
+- Added compact `Chờ` and `Đang nói` controls inside the Studio canvas, plus the same prominent controls in the Avatar inspector. Selecting an avatar source now makes it clear whether that file is the idle or talking clip, and either preview button switches the canvas and publishes the state to the loopback Scene Runtime.
+- This is an operator preview override only. It does not yet drive audio-only prepared scripts; automatic TTS remains the next integration point for owning the `idle -> talking -> idle` lifecycle.
+- Validation passes: `corepack pnpm typecheck`, focused ESLint for the Studio/composable, and `git diff --check`.
+
+## Session update - avatar uploader action repair
+
+- Fixed the Avatar-library launch event name. `Tải avatar của bạn` now opens the Avatar library instead of silently doing nothing; operators can then select `Thêm avatar của bạn` and choose a local MP4 through the native Electron picker.
+- Saving that MP4 now creates and selects an `avatar` scene layer backed by the exact file, loads it as video in the Studio preview, and publishes it to Browser Source. It defaults to the idle role; upload a second MP4 and assign its source to `Đang nói` for the paired preview.
+- Validation passes: `corepack pnpm typecheck`, focused Asset Browser/Studio ESLint, and `git diff --check`.
+
 ## Session update - full-canvas OBS realtime synchronization
 
 - Fixed the Studio-to-OBS contract so every authored scene edit is published immediately through Scene Runtime in addition to the existing debounced project autosave. Layer changes, transforms, visibility, ordering, source changes, and media-reference replacements now reach the Browser Source without requiring reconnect or manual refresh.
@@ -852,3 +864,27 @@ Continue reducing the template-center mismatch with additional independently sou
 - Studio preview and `scene-runtime/runtime.js` now assign descending z-index values from the first layer, so `Đưa lên trên cùng`, `Đưa lên một lớp`, `Đưa xuống một lớp`, and `Đưa xuống dưới cùng` match their labels and OBS output uses the same stacking order.
 - In-app Browser QA added Beauty Studio and Product Table as overlapping layers, selected the lower Beauty Studio source, and clicked `Đưa lên trên cùng`. Its source row moved from index 1 to index 0 and its computed z-index changed from 999 to 1000 while Product Table moved to 999; the overlap visibly switched to the promoted image with no console errors/warnings.
 - Validation passes: focused ESLint, `pnpm typecheck`, 25 focused preview/order tests in the current Vitest invocation, `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK propagation=38ms visualDiff=2.01%`), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check`.
+
+## Session update - realtime text layer visibility and desktop inspector
+
+- Replaced the Studio's fixed low-z promotional text block with real text-layer nodes that use the same authored geometry, transforms, visibility, opacity, and front-to-back ordering as media layers. Text inserted at source index `0` now renders above the layout in both Studio and Scene Runtime.
+- Restored legacy project compatibility so layers with `kind: 'text'` remain renderable even when older saved data still has `source.type: 'none'`.
+- Changed the desktop grid from a fixed 856px canvas column to a flexible canvas column, keeping the text inspector visible inside a 1354x882 viewport instead of pushing it beyond the right edge.
+- In-app Browser QA at `http://127.0.0.1:5173/#/projects/perfume` and `1354x882` confirmed the text editor auto-focuses, `CHU HIEN THI REALTIME` appears immediately on canvas, selected text z-index is `1000` versus the highest media z-index `987`, document width fits the viewport, and console warnings/errors are empty.
+- Validation passes: focused ESLint, `pnpm typecheck`, 7 Studio preview tests, `pnpm test:text-inspector-smoke` (`STUDIO_TEXT_INSPECTOR_SMOKE_OK`), 20 Scene Runtime service test executions in the current Vitest invocation, `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK propagation=39ms visualDiff=2.01%`), and `git diff --check`.
+
+## Session update - manual prepared-script implementation plan
+
+- Added `docs/MANUAL_PREPARED_SCRIPT_PLAN.md` as the implementation specification for the manual-first workflow: operators prepare R1/R2/R3 scripts backed by video, audio, or TTS and can play any script directly without depending on TikTok or AI.
+- The plan records the current ordered-playlist capability and the remaining gaps: independent script entities, direct `playScript(scriptId)`, interrupt/completion policies, audio-to-avatar talking synchronization, progress/hotkeys, migration, and real OBS picture/audio evidence.
+- The roadmap now links this work as the next expansion of the existing Prepared Video Room slice. No runtime code was changed and no automated tests were required for this documentation-only session.
+- Exact next task: implement Slice A from the plan, beginning with prepared-script contracts, validation, backward-compatible playlist migration, and persistence tests.
+
+## Session update - prepared waiting scripts with TTS
+
+- Added project schema v13 prepared scripts. Each waiting script has a clear R-number, name, enabled state, playback type (video, audio, or TTS), source/text, interruption rule, and completion rule.
+- Existing manual playlists are retained and migrated into R1/R2/... video or audio scripts when an older project is opened. New project/export/import validation includes the prepared-script document.
+- Replaced the Studio playlist operator panel with a detailed `Kich ban cho` panel. Operators can add video/audio/TTS scripts, edit their source or spoken text, choose immediate or after-current behavior, choose stop/next/resume behavior, reorder, enable, remove, and play an individual script.
+- Added a single-owner prepared-script controller with direct play, sequential play, after-current queueing, stale callback guards, media availability errors, stop/pause/resume/skip behavior, and Scene Runtime active-script publication.
+- Audio and TTS scripts now set the shared avatar state to talking while active and return it to idle on completion, cancellation, errors, or stop. TTS uses the existing typed IPC provider plus renderer playback path.
+- Validation: focused ESLint and `pnpm typecheck` pass. Focused prepared-script, project migration, and scene serialization tests pass. Browser/OBS physical-media verification remains the next manual evidence task.

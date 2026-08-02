@@ -7,6 +7,8 @@ import type { ProjectSceneLayer } from '../../shared/contracts/projects';
 
 const props = defineProps<{
   activeLayerKind?: ProjectSceneLayer['kind'];
+  activeAvatarState?: ProjectSceneLayer['avatarState'];
+  avatarPreviewState?: 'idle' | 'talking';
   textHistoryPastCount: number;
   textHistoryFutureCount: number;
   imageHistoryPastCount: number;
@@ -30,6 +32,8 @@ const emit = defineEmits<{
   captureTextEdit: [];
   commitImageEdit: [];
   editAvatar: [];
+  setAvatarLayerState: [state: 'idle' | 'talking'];
+  setAvatarPreviewState: [state: 'idle' | 'talking'];
   finishTextEdit: [];
   markTextCustom: [];
   openSettings: [];
@@ -71,7 +75,15 @@ watch(() => props.focusTextRequest, async () => {
       <div class="source-properties-scroll"><label>Bo góc <b>{{ imageRadius }}px</b><input v-model.number="imageRadius" type="range" min="0" max="120" @focus="emit('captureImageEdit')" @change="emit('commitImageEdit')" /></label><label class="property-checkbox">Cắt nền<input v-model="removeImageBackground" type="checkbox" /></label><label :class="{ disabled: !removeImageBackground }">Màu nền<input v-model="backgroundColor" type="color" :disabled="!removeImageBackground" /></label><label :class="{ disabled: !removeImageBackground }">Độ nhạy <b>{{ backgroundSensitivity }}</b><input v-model.number="backgroundSensitivity" type="range" min="0" max="100" :disabled="!removeImageBackground" /></label></div>
     </section>
     <section v-else-if="activeLayerKind === 'avatar'" class="avatar-script-panel">
-      <header><strong>Kịch Bản Avatar</strong><div class="inspector-history"><button type="button" aria-label="Hoàn tác lớp" :disabled="!avatarHistoryPastCount" @click="emit('undoInspector')">↶</button><button type="button" aria-label="Làm lại lớp" :disabled="!avatarHistoryFutureCount" @click="emit('redoInspector')">↷</button><button type="button" @click="emit('editAvatar')">✎ Chỉnh sửa</button></div></header><div><p>Chưa có kịch bản nào.</p><span>Nhấn “Chỉnh sửa” để thêm.</span></div>
+      <header><strong>Avatar & chuyển động</strong><div class="inspector-history"><button type="button" aria-label="Hoàn tác lớp" :disabled="!avatarHistoryPastCount" @click="emit('undoInspector')">↶</button><button type="button" aria-label="Làm lại lớp" :disabled="!avatarHistoryFutureCount" @click="emit('redoInspector')">↷</button></div></header>
+      <div class="avatar-motion-controls">
+        <p>1. Gán video đang chọn · 2. Bấm xem ngay trong khung.</p>
+        <strong>Video này là</strong>
+        <div><button type="button" :class="{ active: activeAvatarState === 'idle' }" @click="emit('setAvatarLayerState', 'idle')">Chờ</button><button type="button" :class="{ active: activeAvatarState === 'talking' }" @click="emit('setAvatarLayerState', 'talking')">Đang nói</button></div>
+        <strong>Xem trước trong khung</strong>
+        <div><button type="button" :class="{ active: avatarPreviewState === 'idle' }" @click="emit('setAvatarPreviewState', 'idle')">▶ Chờ</button><button type="button" :class="{ active: avatarPreviewState === 'talking' }" @click="emit('setAvatarPreviewState', 'talking')">▶ Đang nói</button></div>
+        <button type="button" class="avatar-script-edit" @click="emit('editAvatar')">Soạn kịch bản sau</button>
+      </div>
     </section>
     <section v-else class="interaction-panel">
       <header><span>Tương tác</span><b>Ngoại tuyến</b></header>

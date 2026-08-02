@@ -46,7 +46,7 @@ function sourceSignature(layer, scene) {
 }
 
 function isRenderable(layer) {
-  if (layer.kind === 'text') return layer.source.type === 'text';
+  if (layer.kind === 'text') return true;
   return layer.source.type === 'builtin' ? Boolean(layer.source.assetId) : layer.source.type === 'media' && Boolean(layer.source.mediaReferenceId);
 }
 
@@ -81,6 +81,7 @@ function layerBox(layer, imageIndex) {
   if (layer.kind === 'audio') return { left: 0, top: 0, width: 0.1, height: 0.1 };
   if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
   if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
+  if (layer.kind === 'avatar') return { left: 42, top: 25, width: 54, height: 72 };
   if (imageIndex === 1) return { left: 8, top: 57, width: 84, height: 24 };
   return { left: 0, top: 0, width: 100, height: 100 };
 }
@@ -89,7 +90,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
   const speechVisible = layer.kind !== 'avatar' || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
-  const presentation = state.presentation ?? { mode: 'scene', activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
   const managed = presentation.managedLayerIds.includes(layer.id);
   const presentationVisible = !managed || presentation.activeLayerId === layer.id;
   const renderedKind = mediaKind(layer, state.scene);

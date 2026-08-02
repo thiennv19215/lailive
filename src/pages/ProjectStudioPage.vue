@@ -40,6 +40,7 @@ import { fitContainedPreviewBox, isPreviewRenderable, previewLayerBox, previewLa
 import { ensureUniqueLayerIds } from '../shared/studio/layer-identity';
 import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type ProjectMediaReference, type ProjectMediaStatus, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
 import type { ObsConfigInput, ObsStatus } from '../shared/contracts/obs';
+import type { AvatarSpeechState } from '../shared/contracts/queue';
 import SceneMediaLayer from '../components/SceneMediaLayer.vue';
 import StudioAssetBrowser from '../components/studio/StudioAssetBrowser.vue';
 import StudioInspectorSidebar from '../components/studio/StudioInspectorSidebar.vue';
@@ -90,6 +91,8 @@ const scenePosterElement = ref<HTMLElement | null>(null);
 const avatarName = ref('');
 const avatarVideoName = ref('');
 const notice = ref('');
+// This is a preview override only; automated TTS will own this state later.
+const avatarPreviewState = ref<AvatarSpeechState>('idle');
 const tiktokUsername = ref('');
 const voice = ref('Mỹ Dung');
 const voiceMenuOpen = ref(false);
@@ -180,20 +183,19 @@ const layers = ref<StudioLayer[]>([
 
 const {
   snapshot: playlistSnapshot,
-  items: playlistItems,
+  scripts: preparedScripts,
   sync: syncPlaybackController,
   publish: publishPlayback,
-  assign: assignPlaylist,
-  remove: removePlaylist,
-  move: movePlaylist,
-  toggleItem: togglePlaylistItem,
   toggle: togglePlaylist,
-  start: playbackStart,
+  add: addPreparedScript,
+  remove: removePreparedScript,
+  move: movePreparedScript,
+  startSequence: playbackStart,
+  playScript: playbackPlayScript,
   pause: playbackPause,
   resume: playbackResume,
   skip: playbackSkip,
   stop: playbackStop,
-  retry: playbackRetry,
   ready: playbackReady,
   ended: playbackEnded,
   error: playbackError,
@@ -202,6 +204,7 @@ const {
   layers,
   mediaStatuses,
   projectLoaded,
+  avatarState: avatarPreviewState,
   buildSceneDocument,
   onPublishError: (message) => { notice.value = message.startsWith('Playlist') ? message : `Không đồng bộ Browser Source: ${message}`; },
 });
@@ -236,7 +239,6 @@ const missingMedia = computed(() => {
   );
   return mediaStatuses.value.filter((reference) => !reference.exists && usedReferenceIds.has(reference.id));
 });
-const hasTextLayer = computed(() => layers.value.some((layer) => layer.kind === 'text'));
 const loadedPreviewMediaIds = computed(() => new Set([
   ...Object.keys(imageSources.value),
   ...Object.keys(videoSources.value),
@@ -251,16 +253,12 @@ const activeTransform = computed(() => activeLayer.value?.transform ?? DEFAULT_L
 const activeSelectionBox = computed(() => {
   const layer = activeLayer.value;
   if (!layer) return { left: 0, top: 0, width: 100, height: 100 };
-  if (layer.kind === 'text') return { left: 8, top: 10, width: 84, height: 12 };
+  if (layer.kind === 'text') return previewLayerBox(layer);
 
   const box = previewLayerBox(layer, previewImageLayers.value.indexOf(layer));
   const sourceAspectRatio = previewMediaAspectRatios.value[layer.id];
   if (layer.fitMode !== 'contain' || !sourceAspectRatio) return box;
   return fitContainedPreviewBox(box, sourceAspectRatio, persistedScene.value.width / persistedScene.value.height);
-});
-const activeSceneTransform = computed(() => {
-  const transform = activeTransform.value;
-  return `translate(${transform.x}%, ${transform.y}%) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`;
 });
 const selectionStyle = computed(() => {
   const box = activeSelectionBox.value;
@@ -281,7 +279,6 @@ const sceneTextStyle = computed(() => ({
   fontStyle: textStyle.italic ? 'italic' : 'normal',
   fontWeight: textStyle.bold ? '700' : '400',
   textAlign: textStyle.align,
-  transform: activeLayer.value?.kind === 'text' ? activeSceneTransform.value : undefined,
 }));
 
 
@@ -367,7 +364,8 @@ watch([
   minimumPinTime,
   productPinEnabled,
   triggers,
-  mediaReferences,
+    mediaReferences,
+  () => persistedScene.value.preparedScriptSettings,
 ], () => {
   if (!projectLoaded.value || hydratingProject.value) return;
   void publishPlayback();
@@ -487,7 +485,21 @@ function selectLayer(layerId: string): void {
 
 function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string, string | number> {
   const imageIndex = previewImageLayers.value.indexOf(layer);
-  return { ...previewLayerStyle(layer, index, imageIndex) };
+  const style = { ...previewLayerStyle(layer, index, imageIndex) };
+  if (layer.kind === 'avatar' && layer.avatarState !== 'none' && layer.avatarState !== avatarPreviewState.value) style.opacity = 0;
+  return style;
+}
+
+function setAvatarPreviewState(state: AvatarSpeechState): void {
+  avatarPreviewState.value = state;
+  void publishPlayback();
+  notice.value = state === 'talking' ? 'Avatar đang ở trạng thái nói để kiểm tra chuyển động.' : 'Avatar đã trở về trạng thái chờ.';
+}
+
+function setActiveAvatarLayerState(state: AvatarSpeechState): void {
+  if (!activeLayer.value || activeLayer.value.kind !== 'avatar') return;
+  activeLayer.value.avatarState = state;
+  setAvatarPreviewState(state);
 }
 
 function previewMediaSource(layer: StudioLayer): string | null {
@@ -523,9 +535,16 @@ function previewMediaLayers(): StudioLayer[] {
   return previewRenderableLayers.value.filter((layer) => layer.kind === 'video' || layer.kind === 'gif' || layer.kind === 'image' || layer.kind === 'avatar');
 }
 
+function previewUsesVideo(layer: StudioLayer): boolean {
+  if (layer.kind === 'video') return true;
+  if (layer.kind !== 'avatar' || layer.source.type !== 'media' || !layer.source.mediaReferenceId) return false;
+  return mediaReferences.value.some((reference) => reference.id === layer.source.mediaReferenceId && reference.kind === 'video');
+}
+
 function buildSceneDocument(): ProjectSceneDocument {
   const base = clonePlain(persistedScene.value);
   base.manualPlaybackSettings = clonePlain(persistedScene.value.manualPlaybackSettings);
+  base.preparedScriptSettings = clonePlain(persistedScene.value.preparedScriptSettings);
   return {
     ...base,
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -557,6 +576,7 @@ function buildSceneDocument(): ProjectSceneDocument {
       triggers: triggers.value.map((trigger) => ({ event: trigger.event, enabled: trigger.enabled, actionType: 'voice_tts' as const })),
     },
     manualPlaybackSettings: clonePlain(persistedScene.value.manualPlaybackSettings),
+    preparedScriptSettings: clonePlain(persistedScene.value.preparedScriptSettings),
     mediaReferences: clonePlain(mediaReferences.value),
   };
 }
@@ -856,18 +876,27 @@ async function chooseAvatarVideo(): Promise<void> {
 }
 
 async function saveAvatarMock(): Promise<void> {
-  if (!avatarName.value.trim() || !avatarVideoName.value) {
+  const reference = pendingAvatarMedia.value;
+  if (!avatarName.value.trim() || !avatarVideoName.value || !reference) {
     notice.value = 'Nhập tên và chọn video avatar MP4 trước khi lưu.';
     return;
   }
-  if (pendingAvatarMedia.value) {
-    mediaReferences.value.push(pendingAvatarMedia.value);
-    pendingAvatarMedia.value = null;
-    await refreshMediaStatus();
-  }
+  const dataUrl = await globalThis.window.desktopApi.media.read(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference);
+  mediaReferences.value.push(reference);
+  const layer = createLayer(avatarName.value.trim(), 'avatar', { type: 'media', assetId: null, mediaReferenceId: reference.id });
+  layer.loop = true;
+  layer.muted = true;
+  layer.avatarState = 'idle';
+  layers.value.unshift(layer);
+  activeLayerIndex.value = 0;
+  if (dataUrl) videoSources.value = { ...videoSources.value, [reference.id]: dataUrl };
+  pendingAvatarMedia.value = null;
+  await refreshMediaStatus();
   avatarAddOpen.value = false;
-  avatarLibraryOpen.value = true;
-  notice.value = `Đã thêm avatar “${avatarName.value.trim()}” vào thư viện mock.`;
+  avatarLibraryOpen.value = false;
+  notice.value = `Đã thêm video “${layer.name}” làm avatar chờ. Chọn Đang nói để gán clip nói thứ hai.`;
+  avatarName.value = '';
+  avatarVideoName.value = '';
 }
 
 async function refreshMediaStatus(): Promise<void> {
@@ -1003,24 +1032,28 @@ function selectVoice(option: string): void {
     <StudioToolRail :active-tool="activeTool" @select="activeTool = $event; if ($event === 'Văn bản') addLayer('Văn bản')" />
 
     <div class="studio-left-stack">
-      <StudioAssetBrowser :active-tool="activeTool" @add-layer="addLayer" @add-local-image="addLocalImage" @add-local-video="addLocalVideo" @add-local-audio="addLocalAudio" @open-avatar-library="avatarLibraryOpen = true" />
+      <StudioAssetBrowser :active-tool="activeTool" @add-layer="addLayer" @add-local-image="addLocalImage" @add-local-video="addLocalVideo" @add-local-audio="addLocalAudio" @open-avatar-uploader="avatarLibraryOpen = true" />
 
       <StudioSourcePanel :layers="layers" :active-layer-index="activeLayerIndex" :primary-action="primaryAction" :source-display-name="sourceDisplayName" @add="addLayer()" @remove="removeLayer" @select="activeLayerIndex = $event" />
-      <StudioPlaylistPanel :enabled="persistedScene.manualPlaybackSettings.enabled" :snapshot="playlistSnapshot" :items="playlistItems()" :layers="layers" :source-display-name="sourceDisplayName" @toggle="togglePlaylist" @start="playbackStart" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @retry="playbackRetry" @toggle-item="togglePlaylistItem" @move="movePlaylist" @remove="removePlaylist" @assign="assignPlaylist" />
+      <StudioPlaylistPanel :enabled="persistedScene.preparedScriptSettings.enabled" :snapshot="playlistSnapshot" :scripts="preparedScripts()" :layers="layers" :source-display-name="sourceDisplayName" @toggle="togglePlaylist" @start="playbackStart" @play="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @move="movePreparedScript" @remove="removePreparedScript" @add="addPreparedScript" @changed="syncPlaybackController" />
     </div>
 
     <main class="studio-canvas-wrap">
       <div v-if="notice" class="studio-notice"><Check :size="14" />{{ notice }}<button type="button" aria-label="Đóng thông báo" @click="notice = ''"><X :size="13" /></button></div>
       <div class="studio-grid">
         <div ref="scenePosterElement" class="scene-poster live-frame" :class="{ 'has-authored-scene': previewRenderableLayers.length > 0 }">
+          <div class="avatar-preview-controls" role="group" aria-label="Trạng thái avatar xem trước">
+            <span>Avatar</span>
+            <button type="button" :class="{ active: avatarPreviewState === 'idle' }" @click="setAvatarPreviewState('idle')">Chờ</button>
+            <button type="button" :class="{ active: avatarPreviewState === 'talking' }" @click="setAvatarPreviewState('talking')">Đang nói</button>
+          </div>
           <template v-for="layer in previewMediaLayers()" :key="`preview-media-${layer.id}`">
-            <SceneMediaLayer v-if="layer.kind === 'video' || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="playlistItems().some((item) => item.layerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="playlistSnapshot.playbackRevision" @ready="playbackReady" @ended="playbackEnded" @error="playbackError" @pointerdown.stop="selectLayer(layer.id)" />
+            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="playlistSnapshot.playbackRevision" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @ended="() => playlistSnapshot.activeScriptId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
             <div v-else class="scene-runtime-layer scene-runtime-media" :data-media-kind="layer.kind" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="previewMediaSource(layer) ?? ''" :alt="layer.name" :style="{ objectFit: previewMediaObjectFit(layer) as 'contain' | 'cover' | 'fill' }" @load="capturePreviewMediaAspectRatio(layer.id, $event)" /></div>
           </template>
           <div v-if="!previewRenderableLayers.length" class="empty-frame"><strong>Khung live đang trống</strong><span>Thêm media có nguồn rõ ràng để bắt đầu.</span></div>
-          <div v-if="hasTextLayer" class="scene-copy" @pointerdown.stop="selectLayer(layers.find((layer) => layer.kind === 'text')?.id ?? '')"><small>DEAL HỜI</small><strong :style="sceneTextStyle">{{ textStyle.content || ' ' }}</strong><div class="scene-offers"><span>Giảm đến <b>50%</b></span><span>Hỗ trợ<br /><b>FREESHIP</b></span></div></div>
+          <div v-for="layer in previewRenderableLayers.filter((candidate) => candidate.kind === 'text')" :key="`preview-text-${layer.id}`" class="scene-runtime-layer scene-runtime-text" :class="{ 'is-selected': activeLayer?.id === layer.id }" :style="{ ...previewLayerHitStyle(layer, layers.indexOf(layer)), ...sceneTextStyle }" @pointerdown.stop="selectLayer(layer.id)">{{ textStyle.content || layer.name }}</div>
           <div v-for="layer in previewRenderableLayers" :key="`preview-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
-          <div v-for="layer in layers.filter((candidate) => candidate.kind === 'text')" :key="`preview-text-hit-${layer.id}`" class="scene-layer-hit-target" :class="{ active: activeLayer?.id === layer.id }" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" :aria-label="`Chọn ${sourceDisplayName(layer)}`" @pointerdown.stop="selectLayer(layer.id)" />
           <template v-if="activeLayer">
             <div class="scene-layer-toolbar" aria-label="Thứ tự lớp">
               <button type="button" aria-label="Đưa lên trên cùng" @click="moveActiveLayer('top')"><ArrowUpToLine :size="14" /></button>
@@ -1047,6 +1080,8 @@ function selectVoice(option: string): void {
       v-model:background-color="backgroundColor"
       v-model:background-sensitivity="backgroundSensitivity"
       :active-layer-kind="activeLayer?.kind"
+      :active-avatar-state="activeLayer?.avatarState"
+      :avatar-preview-state="avatarPreviewState"
       :focus-text-request="textFocusRequest"
       :text-history-past-count="textHistoryPast.length"
       :text-history-future-count="textHistoryFuture.length"
@@ -1065,6 +1100,8 @@ function selectVoice(option: string): void {
       @commit-image-edit="commitImageEdit"
       @undo-inspector="undoInspector"
       @redo-inspector="redoInspector"
+      @set-avatar-layer-state="setActiveAvatarLayerState"
+      @set-avatar-preview-state="setAvatarPreviewState"
       @edit-avatar="openAvatarScriptEditor"
       @open-settings="dialog = 'livestream'"
     />

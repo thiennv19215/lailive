@@ -1,64 +1,32 @@
 <script setup lang="ts">
-import type { ManualVideoPlaybackSnapshot } from '../../modules/playback/manual-video-playback';
-import type { ProjectManualPlaylistItem, ProjectSceneLayer } from '../../shared/contracts/projects';
+import type { PreparedScriptPlaybackSnapshot } from '../../modules/playback/prepared-script-playback';
+import type { ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
 
-defineProps<{
-  enabled: boolean;
-  snapshot: ManualVideoPlaybackSnapshot;
-  items: ProjectManualPlaylistItem[];
-  layers: ProjectSceneLayer[];
-  sourceDisplayName: (layer: ProjectSceneLayer) => string;
-}>();
-
-const emit = defineEmits<{
-  assign: [layerId: string];
-  move: [index: number, delta: number];
-  pause: [];
-  remove: [index: number];
-  resume: [];
-  retry: [];
-  skip: [];
-  start: [];
-  stop: [];
-  toggle: [];
-  toggleItem: [index: number];
-}>();
+defineProps<{ enabled: boolean; snapshot: PreparedScriptPlaybackSnapshot; scripts: ProjectPreparedScript[]; layers: ProjectSceneLayer[]; sourceDisplayName: (layer: ProjectSceneLayer) => string; }>();
+const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: string]; play: [scriptId: string]; start: []; pause: []; resume: []; skip: []; stop: []; toggle: []; move: [index: number, delta: number]; remove: [index: number]; changed: []; }>();
 </script>
 
 <template>
   <section class="source-panel playlist-panel">
-    <header>
-      <strong>Playlist phát</strong>
-      <button type="button" class="switch" :class="{ on: enabled }" :aria-pressed="enabled" @click="emit('toggle')"><span /></button>
-    </header>
+    <header><strong>Kịch bản chờ</strong><button type="button" class="switch" :class="{ on: enabled }" :aria-pressed="enabled" @click="emit('toggle')"><span /></button></header>
+    <p class="playlist-state">{{ snapshot.mode }}<span v-if="snapshot.activeScriptId"> · Đang phát {{ scripts.find((script) => script.id === snapshot.activeScriptId)?.name }}</span></p>
     <div class="playlist-controls">
-      <button type="button" :disabled="snapshot.mode !== 'stopped' && snapshot.mode !== 'error'" @click="emit('start')">Bắt đầu</button>
-      <button type="button" :disabled="snapshot.mode === 'paused' || snapshot.mode === 'stopped'" @click="emit('pause')">Tạm dừng</button>
-      <button type="button" :disabled="snapshot.mode !== 'paused'" @click="emit('resume')">Tiếp tục</button>
-      <button type="button" :disabled="!snapshot.activeLayerId" @click="emit('skip')">Bỏ qua</button>
-      <button type="button" :disabled="snapshot.mode === 'stopped'" @click="emit('stop')">Dừng</button>
+      <button type="button" :disabled="!enabled || snapshot.mode !== 'stopped'" @click="emit('start')">Chạy lần lượt</button><button type="button" :disabled="snapshot.mode !== 'playing'" @click="emit('pause')">Tạm dừng</button><button type="button" :disabled="snapshot.mode !== 'paused'" @click="emit('resume')">Tiếp tục</button><button type="button" :disabled="!snapshot.activeScriptId" @click="emit('skip')">Bỏ qua</button><button type="button" :disabled="snapshot.mode === 'stopped'" @click="emit('stop')">Dừng</button>
     </div>
-    <p class="playlist-state">{{ snapshot.mode }}<span v-if="snapshot.activeLayerId"> · R{{ (snapshot.activePlaylistIndex ?? 0) + 1 }}</span></p>
-    <p v-if="snapshot.warnings.length" class="playlist-warning">{{ snapshot.warnings[0] }}</p>
-    <p v-if="snapshot.errorMessage" class="playlist-error">{{ snapshot.errorMessage }} <button type="button" @click="emit('retry')">Thử lại</button></p>
-    <ol>
-      <li v-for="(item, index) in items" :key="item.layerId">
-        <span>R{{ index + 1 }} · {{ sourceDisplayName(layers.find((layer) => layer.id === item.layerId) ?? layers[0]!) }}</span>
-        <button type="button" @click="emit('toggleItem', index)">{{ item.enabled ? 'Tắt' : 'Bật' }}</button>
-        <button type="button" :disabled="index === 0" @click="emit('move', index, -1)">↑</button>
-        <button type="button" :disabled="index === items.length - 1" @click="emit('move', index, 1)">↓</button>
-        <button type="button" @click="emit('remove', index)">X</button>
+    <p v-if="snapshot.errorMessage" class="playlist-error">{{ snapshot.errorMessage }}</p>
+    <ol class="prepared-script-list">
+      <li v-for="(script, index) in scripts" :key="script.id" :class="{ active: snapshot.activeScriptId === script.id }">
+        <div class="prepared-script-title"><b>R{{ index + 1 }}</b><input v-model="script.name" maxlength="120" @change="emit('changed')" /><button type="button" :disabled="!enabled || !script.enabled" @click="emit('play', script.id)">Phát</button></div>
+        <div class="prepared-script-fields">
+          <label>Loại<select v-model="script.playbackType" @change="script.mediaLayerId = script.playbackType === 'tts' ? null : script.mediaLayerId; emit('changed')"><option value="video">Video</option><option value="audio">Thoại file</option><option value="tts">TTS</option></select></label>
+          <label v-if="script.playbackType !== 'tts'">Nguồn<select v-model="script.mediaLayerId" @change="emit('changed')"><option :value="null">Chọn nguồn</option><option v-for="layer in layers.filter((item) => item.kind === script.playbackType)" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
+          <label v-else class="prepared-script-text">Nội dung thoại<textarea v-model="script.speechText" maxlength="5000" placeholder="Nhập lời thoại TTS..." @change="emit('changed')" /></label>
+          <label>Ngắt<select v-model="script.interruptMode" @change="emit('changed')"><option value="immediate">Phát ngay</option><option value="after-current">Chờ kịch bản hiện tại</option></select></label>
+          <label>Sau khi xong<select v-model="script.completionMode" @change="emit('changed')"><option value="stop">Dừng</option><option value="next">Kịch bản tiếp</option><option value="resume-sequence">Tiếp tục chuỗi</option></select></label>
+        </div>
+        <div class="prepared-script-actions"><button type="button" @click="script.enabled = !script.enabled; emit('changed')">{{ script.enabled ? 'Bật' : 'Tắt' }}</button><button type="button" :disabled="index === 0" @click="emit('move', index, -1)">↑</button><button type="button" :disabled="index === scripts.length - 1" @click="emit('move', index, 1)">↓</button><button type="button" @click="emit('remove', index)">Xóa</button></div>
       </li>
     </ol>
-    <div class="playlist-add-list">
-      <button
-        v-for="layer in layers.filter((candidate) => (candidate.kind === 'video' || candidate.kind === 'audio') && !items.some((item) => item.layerId === candidate.id))"
-        :key="layer.id"
-        type="button"
-        @click="emit('assign', layer.id)"
-      >
-        + {{ sourceDisplayName(layer) }}
-      </button>
-    </div>
+    <div class="playlist-add-list"><button v-for="layer in layers.filter((item) => item.kind === 'video')" :key="layer.id" type="button" @click="emit('add', 'video', layer.id)">+ Video: {{ sourceDisplayName(layer) }}</button><button v-for="layer in layers.filter((item) => item.kind === 'audio')" :key="layer.id" type="button" @click="emit('add', 'audio', layer.id)">+ Audio: {{ sourceDisplayName(layer) }}</button><button type="button" @click="emit('add', 'tts')">+ Thoại TTS</button></div>
   </section>
 </template>

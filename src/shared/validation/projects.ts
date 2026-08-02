@@ -113,6 +113,7 @@ export const projectLivestreamSettingsSchema = z.object({
 export const projectManualPlaybackItemSchema = z.object({
   layerId: projectIdSchema,
   enabled: z.boolean(),
+  role: z.enum(['idle', 'response']).default('idle'),
 });
 export const projectManualPlaybackSettingsSchema = z.object({
   enabled: z.boolean(),
@@ -120,6 +121,34 @@ export const projectManualPlaybackSettingsSchema = z.object({
     (items) => new Set(items.map((item) => item.layerId)).size === items.length,
     'Playlist layer IDs must be unique.',
   ),
+});
+export const projectPreparedScriptSchema = z.object({
+  id: projectIdSchema,
+  name: z.string().trim().min(1).max(120),
+  enabled: z.boolean(),
+  order: z.number().int().min(0).max(19),
+  playbackType: z.enum(['video', 'audio', 'tts']),
+  mediaLayerId: projectIdSchema.nullable(),
+  speechText: z.string().trim().max(5_000),
+  interruptMode: z.enum(['immediate', 'after-current']),
+  completionMode: z.enum(['stop', 'next', 'resume-sequence']),
+}).superRefine((script, context) => {
+  if (script.playbackType === 'tts' && !script.speechText) {
+    context.addIssue({ code: 'custom', path: ['speechText'], message: 'TTS scripts need speech text.' });
+  }
+  if (script.playbackType !== 'tts' && !script.mediaLayerId) {
+    context.addIssue({ code: 'custom', path: ['mediaLayerId'], message: 'Media scripts need a source layer.' });
+  }
+  if (script.playbackType === 'tts' && script.mediaLayerId !== null) {
+    context.addIssue({ code: 'custom', path: ['mediaLayerId'], message: 'TTS scripts cannot reference a media layer.' });
+  }
+});
+export const projectPreparedScriptSettingsSchema = z.object({
+  enabled: z.boolean(),
+  scripts: z.array(projectPreparedScriptSchema).max(20).superRefine((scripts, context) => {
+    if (new Set(scripts.map((script) => script.id)).size !== scripts.length) context.addIssue({ code: 'custom', message: 'Script IDs must be unique.' });
+    if (new Set(scripts.map((script) => script.order)).size !== scripts.length) context.addIssue({ code: 'custom', message: 'Script orders must be unique.' });
+  }),
 });
 export const projectSceneSchema = z.object({
   schemaVersion: z.literal(PROJECT_SCHEMA_VERSION),
@@ -132,6 +161,7 @@ export const projectSceneSchema = z.object({
   avatarSettings: projectAvatarSettingsSchema,
   livestreamSettings: projectLivestreamSettingsSchema,
   manualPlaybackSettings: projectManualPlaybackSettingsSchema,
+  preparedScriptSettings: projectPreparedScriptSettingsSchema,
   aiSettings: aiReplySettingsSchema,
   ttsSettings: ttsProjectSettingsSchema,
   products: productCatalogSchema,
@@ -187,11 +217,43 @@ function migrateManualPlaybackSettings(
   fallback: ProjectSceneDocument['manualPlaybackSettings'],
 ): ProjectSceneDocument['manualPlaybackSettings'] {
   const current = projectManualPlaybackSettingsSchema.safeParse(value);
-  if (current.success) return current.data;
+  if (current.success) return {
+    enabled: current.data.enabled,
+    // Keep the legacy idle form compact so existing portable projects round-trip unchanged.
+    playlist: current.data.playlist.map(({ role, ...item }) => role === 'idle' ? item : { ...item, role }),
+  };
   if (!value || typeof value !== 'object') return fallback;
   const legacy = value as Record<string, unknown>;
   const idleLayerIds = z.array(projectIdSchema).max(20).catch([]).parse(legacy.idleLayerIds);
-  return { enabled: Boolean(legacy.enabled), playlist: idleLayerIds.map((layerId) => ({ layerId, enabled: true })) };
+  return { enabled: Boolean(legacy.enabled), playlist: idleLayerIds.map((layerId) => ({ layerId, enabled: true, role: 'idle' })) };
+}
+
+function migratePreparedScriptSettings(
+  value: unknown,
+  manualPlayback: ProjectSceneDocument['manualPlaybackSettings'],
+  layers: ProjectSceneDocument['layers'],
+  fallback: ProjectSceneDocument['preparedScriptSettings'],
+): ProjectSceneDocument['preparedScriptSettings'] {
+  const current = projectPreparedScriptSettingsSchema.safeParse(value);
+  if (current.success && (current.data.scripts.length > 0 || manualPlayback.playlist.length === 0)) {
+    return { ...current.data, scripts: [...current.data.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
+  }
+  const scripts = manualPlayback.playlist.flatMap((item, order) => {
+    const layer = layers.find((candidate) => candidate.id === item.layerId);
+    if (!layer || (layer.kind !== 'video' && layer.kind !== 'audio')) return [];
+    return [{
+      id: `script-${order + 1}-${layer.id}`,
+      name: `R${order + 1} - ${layer.name}`,
+      enabled: item.enabled,
+      order,
+      playbackType: layer.kind,
+      mediaLayerId: layer.id,
+      speechText: '',
+      interruptMode: 'immediate' as const,
+      completionMode: 'next' as const,
+    }];
+  });
+  return scripts.length ? { enabled: manualPlayback.enabled, scripts } : fallback;
 }
 
 export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
@@ -213,32 +275,28 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
   const migratedTriggers = legacyTriggers.success && legacyTriggers.data.length === 5
     ? legacyTriggers.data.map((trigger) => ({ event: trigger.event, enabled: trigger.enabled, actionType: trigger.actionType ?? trigger.reply ?? 'voice_tts' as const }))
     : defaults.livestreamSettings.triggers;
+  const migratedLayers = z.array(z.unknown()).max(500).catch([]).parse(source.layers).map((layer, index) => {
+    const candidate = layer && typeof layer === 'object' ? layer as Record<string, unknown> : {};
+    const kind = z.enum(['avatar', 'image', 'gif', 'video', 'audio', 'text']).catch('image').parse(candidate.kind);
+    return projectSceneLayerSchema.parse({
+      ...candidate,
+      id: candidate.id ?? `migrated-layer-${index + 1}`,
+      name: candidate.name ?? `Layer ${index + 1}`,
+      kind,
+      transform: projectLayerTransformSchema.catch(defaults.layers[0]?.transform ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }).parse(candidate.transform),
+      visible: candidate.visible ?? true, locked: candidate.locked ?? false, opacity: candidate.opacity ?? 1, fitMode: candidate.fitMode ?? 'contain',
+      loop: candidate.loop ?? (kind === 'gif' || kind === 'video' || kind === 'audio'), muted: candidate.muted ?? (kind === 'video'), volume: candidate.volume ?? 1,
+      avatarState: candidate.avatarState ?? (kind === 'avatar' ? 'idle' : 'none'), chromaKey: candidate.chromaKey ?? { enabled: false, color: '#00ff00', tolerance: 24 },
+      source: candidate.source ?? { type: 'none', assetId: null, mediaReferenceId: null },
+    });
+  });
+  const manualPlaybackSettings = migrateManualPlaybackSettings(source.manualPlaybackSettings, defaults.manualPlaybackSettings);
   return projectSceneSchema.parse({
     ...defaults,
     ...source,
     schemaVersion: PROJECT_SCHEMA_VERSION,
     canvasPreset: source.canvasPreset ?? defaults.canvasPreset,
-    layers: z.array(z.unknown()).max(500).catch([]).parse(source.layers).map((layer, index) => {
-      const candidate = layer && typeof layer === 'object' ? layer as Record<string, unknown> : {};
-      const kind = z.enum(['avatar', 'image', 'gif', 'video', 'audio', 'text']).catch('image').parse(candidate.kind);
-      return projectSceneLayerSchema.parse({
-        ...candidate,
-        id: candidate.id ?? `migrated-layer-${index + 1}`,
-        name: candidate.name ?? `Layer ${index + 1}`,
-        kind,
-        transform: projectLayerTransformSchema.catch(defaults.layers[0]?.transform ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }).parse(candidate.transform),
-        visible: candidate.visible ?? true,
-        locked: candidate.locked ?? false,
-        opacity: candidate.opacity ?? 1,
-        fitMode: candidate.fitMode ?? 'contain',
-        loop: candidate.loop ?? (kind === 'gif' || kind === 'video' || kind === 'audio'),
-        muted: candidate.muted ?? (kind === 'video'),
-        volume: candidate.volume ?? 1,
-        avatarState: candidate.avatarState ?? (kind === 'avatar' ? 'idle' : 'none'),
-        chromaKey: candidate.chromaKey ?? { enabled: false, color: '#00ff00', tolerance: 24 },
-        source: candidate.source ?? { type: 'none', assetId: null, mediaReferenceId: null },
-      });
-    }),
+    layers: migratedLayers,
     textStyle: projectTextStyleSchema.catch(defaults.textStyle).parse(source.textStyle),
     imageSettings: projectImageSettingsSchema.catch(defaults.imageSettings).parse(source.imageSettings),
     avatarSettings: projectAvatarSettingsSchema.catch(defaults.avatarSettings).parse(source.avatarSettings),
@@ -247,7 +305,8 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
       ...sourceLivestream,
       triggers: migratedTriggers,
     }),
-    manualPlaybackSettings: migrateManualPlaybackSettings(source.manualPlaybackSettings, defaults.manualPlaybackSettings),
+    manualPlaybackSettings,
+    preparedScriptSettings: migratePreparedScriptSettings(source.preparedScriptSettings, manualPlaybackSettings, migratedLayers, defaults.preparedScriptSettings),
 
     aiSettings: aiReplySettingsSchema.catch(defaults.aiSettings).parse(source.aiSettings),
     ttsSettings: ttsProjectSettingsSchema.catch(defaults.ttsSettings).parse(source.ttsSettings),

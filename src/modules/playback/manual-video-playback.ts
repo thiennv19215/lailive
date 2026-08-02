@@ -25,6 +25,7 @@ export class ManualVideoPlaybackController {
   private settings: ProjectManualPlaybackSettings = { enabled: false, playlist: [] };
   private layers = new Map<string, PlayableLayer>();
   private disposed = false;
+  private responseReturnIndex: number | null = null;
   private snapshotValue: ManualVideoPlaybackSnapshot = { mode: 'stopped', activeLayerId: null, activePlaylistIndex: null, playbackRevision: 0, attemptedLayerIds: [], sessionHistory: [], warnings: [], errorMessage: null, activeSettings: null };
   private readonly listeners = new Set<PlaybackListener>();
 
@@ -38,8 +39,8 @@ export class ManualVideoPlaybackController {
   snapshot(): ManualVideoPlaybackSnapshot { return cloneSnapshot(this.snapshotValue); }
 
   configure(settings: ProjectManualPlaybackSettings, layers: readonly PlayableLayer[]): void {
-    this.settings = { enabled: settings.enabled, playlist: settings.playlist.map((item) => ({ ...item })) };
-    this.layers = new Map(layers.filter((layer) => layer.kind === 'video' || layer.kind === 'audio').map((layer) => [layer.id, { ...layer }]));
+    this.settings = { enabled: settings.enabled, playlist: settings.playlist.map((item) => ({ ...item, role: item.role ?? 'idle' })) };
+    this.layers = new Map(layers.filter((layer) => layer.kind === 'video' || layer.kind === 'audio' || layer.kind === 'avatar').map((layer) => [layer.id, { ...layer }]));
     this.resetSession();
   }
 
@@ -70,6 +71,20 @@ export class ManualVideoPlaybackController {
   skip(): boolean {
     if (!this.snapshotValue.activeLayerId || this.snapshotValue.mode === 'stopped' || this.snapshotValue.mode === 'error') return false;
     return this.advance();
+  }
+
+  playResponse(layerId: string): boolean {
+    const index = this.settings.playlist.findIndex((item) => item.layerId === layerId && item.enabled && (item.role ?? 'idle') === 'response');
+    const layer = index < 0 ? undefined : this.layers.get(layerId);
+    if (!layer || layer.available === false) return this.fail('Kịch bản phản hồi không sẵn sàng phát.');
+    this.responseReturnIndex = this.snapshotValue.activePlaylistIndex ?? 0;
+    this.snapshotValue.activeLayerId = layerId;
+    this.snapshotValue.activePlaylistIndex = index;
+    this.snapshotValue.activeSettings = { loop: false, muted: layer.muted, volume: layer.volume };
+    this.snapshotValue.playbackRevision += 1;
+    this.snapshotValue.mode = 'loading';
+    this.emit();
+    return true;
   }
 
   stop(): boolean {
@@ -105,6 +120,11 @@ export class ManualVideoPlaybackController {
 
   onEnded(layerId: string, playbackRevision: number): boolean {
     if (!this.matches(layerId, playbackRevision) || this.snapshotValue.mode === 'paused') return false;
+    if (this.responseReturnIndex !== null) {
+      const returnIndex = this.responseReturnIndex;
+      this.responseReturnIndex = null;
+      return this.activateNext(returnIndex, false, 'idle');
+    }
     const layer = this.layers.get(layerId);
     if (layer?.loop) {
       this.snapshotValue.playbackRevision += 1;
@@ -130,15 +150,15 @@ export class ManualVideoPlaybackController {
     return warnings;
   }
 
-  private activateNext(startIndex: number, recovering: boolean): boolean {
+  private activateNext(startIndex: number, recovering: boolean, role: 'idle' | 'response' = 'idle'): boolean {
     const count = this.settings.playlist.length;
     if (!count) return this.fail('Playlist trống.');
-    const validCount = this.settings.playlist.filter((candidate) => candidate.enabled && this.layers.get(candidate.layerId)?.available !== false && this.layers.has(candidate.layerId)).length;
+    const validCount = this.settings.playlist.filter((candidate) => (candidate.role ?? 'idle') === role && candidate.enabled && this.layers.get(candidate.layerId)?.available !== false && this.layers.has(candidate.layerId)).length;
     for (let offset = 0; offset < count; offset += 1) {
       const index = (startIndex + offset) % count;
       const item = this.settings.playlist[index];
       const layer = item && item.enabled ? this.layers.get(item.layerId) : undefined;
-      if (!item?.enabled || !layer || layer.available === false) continue;
+      if (!item?.enabled || (item.role ?? 'idle') !== role || !layer || layer.available === false) continue;
       if (this.snapshotValue.sessionHistory[this.snapshotValue.sessionHistory.length - 1] === layer.id && validCount > 1) continue;
       this.snapshotValue.activeLayerId = layer.id;
       this.snapshotValue.activePlaylistIndex = index;

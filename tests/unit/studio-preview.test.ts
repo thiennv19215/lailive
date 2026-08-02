@@ -47,4 +47,26 @@ describe('Studio preview source and geometry', () => {
 
     expect(Number(previewLayerStyle(front, 0).zIndex)).toBeGreaterThan(Number(previewLayerStyle(back, 1).zIndex));
   });
+
+  it('gives text layers the same authored box, transform and z-order rules as media layers', () => {
+    const text = createProjectSceneLayer('text', 'Văn bản', 'text', { type: 'text', assetId: null, mediaReferenceId: null });
+    text.transform = { x: 4, y: 6, scaleX: 1.2, scaleY: 0.9, rotation: 8 };
+
+    expect(isPreviewRenderable(text)).toBe(true);
+    expect(previewLayerStyle(text, 0)).toMatchObject({
+      left: '8%',
+      top: '7%',
+      width: '84%',
+      height: '18%',
+      zIndex: '1000',
+      transform: 'translate(4.761904761904762%, 33.33333333333333%) rotate(8deg) scale(1.2, 0.9)',
+    });
+  });
+
+  it('keeps legacy text layers renderable when their old source type is none', () => {
+    const legacyText = createProjectSceneLayer('legacy-text', 'text', 'text');
+
+    expect(legacyText.source.type).toBe('none');
+    expect(isPreviewRenderable(legacyText)).toBe(true);
+  });
 });
