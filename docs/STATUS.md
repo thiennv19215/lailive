@@ -1052,3 +1052,8 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - source import shortcut
 
 - The `+` control in `Nguồn` now opens a compact import menu for local Video, Image, Audio, or Avatar files instead of adding a generic placeholder layer.
+
+## Session update - source-first Studio layout
+
+- Removed the obsolete Studio tool rail (Avatar, background, video, sticker, and text). Local media is now added only through the `Nguồn +` menu, leaving more room for the source list and preview canvas.
+- Reflowed the desktop and responsive Studio grids so the source panel, canvas, sidebar, and script board retain their expected positions without the removed column.

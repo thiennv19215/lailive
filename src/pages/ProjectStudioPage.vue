@@ -46,16 +46,13 @@ import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type
 import type { ObsConfigInput, ObsStatus } from '../shared/contracts/obs';
 import type { AvatarSpeechState } from '../shared/contracts/queue';
 import SceneMediaLayer from '../components/SceneMediaLayer.vue';
-import StudioAssetBrowser from '../components/studio/StudioAssetBrowser.vue';
 import StudioInspectorSidebar from '../components/studio/StudioInspectorSidebar.vue';
 import StudioMixerFooter from '../components/studio/StudioMixerFooter.vue';
 import StudioPlaylistPanel from '../components/studio/StudioPlaylistPanel.vue';
 import StudioSourcePanel from '../components/studio/StudioSourcePanel.vue';
-import StudioToolRail from '../components/studio/StudioToolRail.vue';
 import { useStudioPlayback } from '../composables/useStudioPlayback';
 import { AvatarVideoStateManager, type AvatarVideoSnapshot } from '../modules/playback/avatar-video-state-manager';
 
-type ToolName = 'Avatar' | 'Hình nền' | 'Video' | 'Hình dán' | 'Văn bản';
 type DialogName = 'livestream' | 'export' | 'start' | null;
 type LayerKind = ProjectSceneLayer['kind'];
 type StudioLayer = ProjectSceneLayer;
@@ -79,7 +76,6 @@ function createLayer(name: string, kind: LayerKind, source?: ProjectSceneLayer['
   return createProjectSceneLayer(`layer-${globalThis.crypto.randomUUID()}`, name, kind, source);
 }
 
-const activeTool = ref<ToolName>('Avatar');
 const route = useRoute();
 const projectTitle = ref('Perfume 11:48:42 PM');
 const projectLoaded = ref(false);
@@ -230,17 +226,6 @@ const unsubscribeAvatarVideo = avatarVideoManager.subscribe((snapshot) => {
   void publishPlayback();
 });
 const resizeHandles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const primaryAction = computed(() => {
-  const labels: Record<ToolName, string> = {
-    Avatar: 'Thêm avatar',
-    'Hình nền': 'Thêm hình nền',
-    Video: 'Thêm video',
-    'Hình dán': 'Thêm hình dán',
-    'Văn bản': 'Thêm văn bản',
-  };
-  return labels[activeTool.value];
-});
-
 const pinManagerStatus = computed(() => {
   if (pinManagerState.value === 'checking') return 'Đang mở TikTok Live Manager';
   if (pinManagerState.value === 'login-required') return 'Đang chờ đăng nhập · Không có sản phẩm';
@@ -404,7 +389,7 @@ watch([
   autosaveTimer = globalThis.setTimeout(() => { void saveSceneNow(); }, 350);
 }, { deep: true });
 
-function addLayer(label: string = activeTool.value): void {
+function addLayer(label: string = 'Văn bản'): void {
   const kind: LayerKind = label === 'Flower GIF' ? 'gif' : label.includes('Avatar') ? 'avatar' : label.includes('Video') ? 'video' : label.includes('Văn bản') ? 'text' : 'image';
   const sourceName = label.includes(' - ') || label === 'Flower GIF' || ['FREESHIP', '-50%', 'LIVE ONLY', 'HOT DEAL'].includes(label)
     ? label
@@ -1262,14 +1247,10 @@ function selectVoice(option: string): void {
       <button v-for="reference in missingMedia" :key="reference.id" type="button" @click="repairMedia(reference)">Chọn lại {{ reference.label }}</button>
     </section>
 
-    <StudioToolRail :active-tool="activeTool" @select="activeTool = $event; if ($event === 'Văn bản') addLayer('Văn bản')" />
-
     <div class="studio-left-stack">
-      <StudioAssetBrowser :active-tool="activeTool" @add-layer="addLayer" @add-local-image="addLocalImage" @add-local-video="addLocalVideo" @add-local-audio="addLocalAudio" @open-avatar-uploader="avatarLibraryOpen = true" />
-
       <section class="avatar-state-controls"><strong>Chuyển động avatar</strong><div><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></div></section>
 
-      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" :primary-action="primaryAction" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @edit-scripts="preparedScriptsOpen = true" />
+      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @edit-scripts="preparedScriptsOpen = true" />
     </div>
 
     <main class="studio-canvas-wrap">
