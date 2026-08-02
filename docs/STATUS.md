@@ -1020,3 +1020,7 @@ Continue reducing the template-center mismatch with additional independently sou
 - A direct immediate play clears the suspended waiting item, preventing an unintended resume after an operator explicitly replaces a priority reply.
 - Removing the final layer that uses a local media reference removes that reference and its in-memory preview source from the project; the original external file is never deleted.
 - Validation: `pnpm typecheck`, focused playback/runtime tests, changed-file ESLint, and `git diff --check` pass.
+
+## Session update - automatic waiting timeline start
+
+- A project with enabled waiting scripts now starts Video 1 after local media is ready. Adding or assigning a new `Chờ` source also starts the Timeline when it is stopped; further waiting sources remain queued in their configured order.

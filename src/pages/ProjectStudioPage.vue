@@ -42,7 +42,7 @@ import {
 } from '../shared/studio/layer-transform';
 import { fitContainedPreviewBox, isPreviewRenderable, previewLayerBox, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
 import { ensureUniqueLayerIds } from '../shared/studio/layer-identity';
-import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type AvatarVideoState, type ProjectMediaReference, type ProjectMediaStatus, type PreparedScriptRole, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
+import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type AvatarVideoState, type ProjectMediaReference, type ProjectMediaStatus, type PreparedScriptRole, type ProjectPreparedScript, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
 import type { ObsConfigInput, ObsStatus } from '../shared/contracts/obs';
 import type { AvatarSpeechState } from '../shared/contracts/queue';
 import SceneMediaLayer from '../components/SceneMediaLayer.vue';
@@ -199,7 +199,7 @@ const {
   sync: syncPlaybackController,
   publish: publishPlayback,
   toggle: togglePlaylist,
-  add: addPreparedScript,
+  add: addPreparedScriptInternal,
   remove: removePreparedScript,
   removeForLayer: removePreparedScriptsForLayer,
   move: movePreparedScript,
@@ -350,6 +350,7 @@ onMounted(async () => {
     await refreshMediaStatus();
     await loadMediaSources();
     syncPlaybackController();
+    startWaitingTimelineIfReady();
     await publishPlayback();
     await refreshSceneRuntimeUrl();
   }
@@ -535,6 +536,19 @@ function removeLayer(index: number): void {
   notice.value = `Đã xoá nguồn “${layer.name}” và mọi mục Timeline dùng nguồn này.`;
 }
 
+function startWaitingTimelineIfReady(): void {
+  if (!persistedScene.value.preparedScriptSettings.enabled || playlistSnapshot.value.mode !== 'stopped') return;
+  if (!preparedScripts().some((script) => script.enabled && script.role === 'idle')) return;
+  playbackStart();
+}
+
+function addPreparedScript(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null): void {
+  addPreparedScriptInternal(type, mediaLayerId);
+  // Assignment may change the new script's role synchronously; wait until it
+  // has settled before deciding whether it belongs in the automatic waiting run.
+  void nextTick(startWaitingTimelineIfReady);
+}
+
 function sourceDisplayName(layer: StudioLayer): string {
   if (layer.kind === 'avatar' && /^Avatar \d+$/i.test(layer.name)) return 'Chinese Beauty Sale 3';
   return layer.name;
@@ -668,6 +682,7 @@ function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): v
   if (role === 'idle') script.completionMode = 'resume-sequence';
   if (role === 'conversation') script.completionMode = 'resume-sequence';
   syncPlaybackController();
+  if (role === 'idle') startWaitingTimelineIfReady();
   notice.value = `Đã gán ${layer.name} vào chế độ ${role === 'idle' ? 'Chờ' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'}.`;
 }
 
