@@ -1,6 +1,16 @@
 # Status
 
-Updated: 2026-08-01
+Updated: 2026-08-02
+
+## Session update - primary uploaded-audio verification
+
+- Importing audio while a video (or video avatar) is selected now attaches it directly to that video's prepared script. Changing an existing audio-only script to a video source also promotes the former primary audio into `Audio kèm`, avoiding a manual reconfiguration trap.
+- Validation passes: `pnpm typecheck`, focused prepared-playback tests (17/17), and `git diff --check`. In-app Browser UI verification remains unavailable because its local navigation times out before a tab is established.
+- The Electron Scene Runtime smoke now verifies a standalone uploaded audio source as the primary prepared-script media, not only as a track attached to video. It requires the native Browser Source audio element to be present, unmuted, decoded, playing, and advancing its playback clock.
+- The smoke also waits for the dedicated Browser Source window before inspecting it, removing an intermittent startup race that could hide an actual playback failure.
+- Validation passes: `pnpm typecheck`, `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK`, propagation 96 ms, visual diff 2.03%), and `git diff --check`.
+- The same smoke also passes with a user-provided ElevenLabs MP3 supplied through `AI_LIVESTREAM_AUDIO_SMOKE_FILE` (propagation 104 ms, visual diff 2.03%).
+- The in-app Browser direct UI check is blocked by a CDP evaluation timeout; the Electron smoke remains independent of that browser connection and uses a temporary app profile.
 
 ## Session update - hard-cut video playback
 
@@ -1214,3 +1224,58 @@ Continue reducing the template-center mismatch with additional independently sou
 - Capture-mode Electron launches use their own single-instance scope when a temporary smoke profile is supplied, so media tests do not attach to or disturb an operator's already-open app.
 - The Scene Runtime smoke now uses the local `flower.mp4` fixture (H.264 + AAC) as both an uploaded video and an uploaded audio reference. It verifies both native media elements are unmuted, preserve configured volume, decode, and advance `currentTime` in Browser Source.
 - Validation passes: focused ESLint, `pnpm typecheck`, focused validation/runtime/TTS tests (22/22), `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK`, propagation 83 ms, visual diff 2.01%), and `git diff --check`.
+
+## Session update - prepared script audio mixer
+
+- Each prepared script now exposes separate mute and volume controls for its video/original script audio and its attached `Audio kem` track. The companion track remains synchronized with the video start through the prepared playback controller, while operators can mute embedded video sound to avoid duplicate audio.
+- Validation passes: `pnpm typecheck`, focused ESLint for `StudioPlaylistPanel.vue`, prepared playback tests (17/17), and `git diff --check`.
+- Note: a broad Vitest command was not used as final evidence because an unrelated Shop browser smoke cleanup hook timed out; the focused prepared-playback suite passes.
+
+## Session update - Studio companion-audio playback repair
+
+- Root cause found through Electron runtime inspection: `previewRenderableLayers` deliberately omitted audio-only layers, and `previewMediaLayers()` consumed that collection. The Studio therefore mounted the video but never created the companion `<audio>` element, so an attached audio script could not play locally.
+- `previewMediaLayers()` now appends only browser-playable audio layers as non-visual media elements. They remain absent from canvas layout/hit targets but participate in the prepared script lifecycle, including play, pause, stop, mute, and volume.
+- Validation passes: `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK`, propagation 104 ms, visual diff 2.03%), `pnpm typecheck`, focused Studio ESLint, and `git diff --check`.
+
+## Session update - source Timeline audio controls
+
+- Selecting an audio, video, or video-avatar source now shows `Audio Timeline` directly in the left `Dua vao Timeline` panel. It provides an immediate mute/unmute toggle and a 0-100% volume slider, which update the local Studio and Browser Source presentation without opening the detailed script dialog.
+- Video sources explicitly note that their embedded sound should be muted when an attached companion audio track is being used. Image sources have no audio controls because they cannot emit sound.
+- Validation passes: `pnpm typecheck`, focused Studio ESLint, and `git diff --check`.
+
+## Session update - split media Timeline and script controls
+
+- The Studio footer now uses a two-column editor layout: a wide left `Timeline video & audio` deck for actual playable clips, and a compact right `Kich ban` controller for background loop, priority, and instant-response workflows. The previous three full-width script lanes no longer consume the clip-editing area.
+- All existing playback actions remain available. Clicking a media clip plays that script; the compact controller still starts the looping lane and requests priority/conversation roles. OBS controls remain in their existing right-side stack.
+- Validation passes: `pnpm typecheck`, focused ESLint for `StudioMixerFooter.vue`, `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK`, propagation 66 ms, visual diff 2.01%), and `git diff --check`.
+
+## Session update - expanded dual-panel Timeline workspace
+
+- Replaced the compact split footer with two operational panels: `Kich ban` is a dedicated left manager for loop, priority, and response roles; `Video & audio Timeline` is a dedicated right workspace with its own source rail, clip track, playback controls, and selected-source mute/volume console.
+- Audio controls now live beside video/audio clips rather than in the source inspector. Selecting a source in the media rail selects the same canvas layer, and mute/volume updates preserve the existing Studio/Browser Source playback behavior.
+- Raised the desktop footer from 175px to 250px so media and script controls are usable rather than compressed.
+- Validation passes: `pnpm typecheck`, focused Studio ESLint, `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK`, propagation 181 ms, visual diff 2.03%), and `git diff --check`.
+
+## Session update - Timeline viewport allocation
+
+- Desktop Studio now allocates 420px to the upper canvas and 380px to the Timeline footer, moving script and media controls into the visible viewport instead of leaving unused canvas height above them.
+- Validation passes: `pnpm typecheck` and `git diff --check`.
+
+## Session update - Timeline UX refinement
+
+- Reworked the Studio Timeline's visual hierarchy for faster editing: dedicated script and media rails, a time-grid/playhead treatment, larger readable clip targets, selected-state feedback, and a tighter OBS/go-live dock.
+- Existing playback, source selection, audio controls, OBS, export, and livestream events remain unchanged; this session changes the operator surface only.
+- Validation: `pnpm typecheck`, `git diff --check`, and Electron capture of `#/projects/perfume` pass (`artifacts/rebuild/project-editor.png`). The dedicated scene-runtime smoke was exercised but failed its editor/runtime visual-diff threshold at 4.11% (threshold: 3%); its media/scene comparison is not part of the Timeline surface and needs a separate stability investigation.
+
+## Session update - priority scene queue
+
+- The waiting loop remains the default program. Adding a video, audio, or TTS scene as `Cảnh ưu tiên` now interrupts the active waiting scene immediately, queues later priority scenes FIFO, then resumes the interrupted waiting scene once the queue is empty.
+- The detailed script dialog now exposes one-click `+ Vòng lặp`, `+ Ưu tiên`, and `+ Thoại ưu tiên` creation paths so operators can prepare multiple priority scenes without reconfiguring every new item.
+- Reduced the desktop Timeline footprint to 300px and removed the desktop canvas minimum-height constraint that had pushed the Timeline below the first viewport. The script rail now makes the immediate-priority behavior explicit.
+- Validation: prepared-script controller unit tests (17/17), `pnpm typecheck`, `git diff --check`, and Electron capture of `#/projects/perfume` pass.
+
+## Session update - audio source decluttering
+
+- Audio layers are now hidden from the visual `Nguồn` list and the Timeline media rail; they are not composited layout layers.
+- The script editor keeps audio as an `Audio kèm` choice for each video. Existing standalone-audio scripts remain playable for backward compatibility while no longer appearing as layout sources.
+- Validation: `pnpm typecheck`, prepared-script controller unit tests (17/17), `git diff --check`, and Electron capture of `#/projects/perfume` pass.

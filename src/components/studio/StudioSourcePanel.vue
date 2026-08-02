@@ -28,8 +28,12 @@ const emit = defineEmits<{
 const sourceListElement = ref<HTMLElement | null>(null);
 const sourceMenuElement = ref<HTMLElement | null>(null);
 const importMenuOpen = ref(false);
+const visualLayers = computed(() => props.layers
+  .map((layer, index) => ({ layer, index }))
+  // Audio belongs to a video/script, not the composited visual layout.
+  .filter(({ layer }) => layer.kind !== 'audio'));
 const activeLayer = computed(() => props.activeLayerIndex === null ? null : props.layers[props.activeLayerIndex] ?? null);
-const activeCanScript = computed(() => Boolean(activeLayer.value && ['avatar', 'video', 'audio'].includes(activeLayer.value.kind)));
+const activeCanScript = computed(() => Boolean(activeLayer.value && ['avatar', 'video'].includes(activeLayer.value.kind)));
 const activeScript = computed(() => activeLayer.value
   ? props.scripts.find((script) => script.mediaLayerId === activeLayer.value?.id || script.audioLayerId === activeLayer.value?.id || script.avatarLayerId === activeLayer.value?.id)
   : undefined);
@@ -62,14 +66,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeImportMen
       </div>
     </header>
     <ul ref="sourceListElement">
-      <li v-for="(layer, index) in layers" :key="layer.id" :data-layer-id="layer.id" :class="{ active: activeLayerIndex === index }" @click="emit('select', index)">
+      <li v-for="entry in visualLayers" :key="entry.layer.id" :data-layer-id="entry.layer.id" :class="{ active: activeLayerIndex === entry.index }" @click="emit('select', entry.index)">
+        <template v-for="layer in [entry.layer]" :key="layer.id">
         <UserRound v-if="layer.kind === 'avatar'" :size="14" />
         <Type v-else-if="layer.kind === 'text'" :size="14" />
-        <AudioLines v-else-if="layer.kind === 'audio'" :size="14" />
         <Clapperboard v-else-if="layer.kind === 'video'" :size="14" />
         <Image v-else :size="14" />
         <span>{{ sourceDisplayName(layer) }}</span>
-        <button type="button" :aria-label="`Xóa ${layer.name}`" @click.stop="emit('remove', index)"><X :size="13" /></button>
+        <button type="button" :aria-label="`Xóa ${layer.name}`" @click.stop="emit('remove', entry.index)"><X :size="13" /></button>
+        </template>
       </li>
     </ul>
     <section class="source-script-workbench" :class="{ disabled: !activeCanScript }">
@@ -85,7 +90,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeImportMen
         <button v-if="activeLayer.kind === 'video' || activeLayer.kind === 'avatar'" type="button" class="source-audio-action" @click="emit('addAudio', activeLayer.id)">+ Gắn audio cho nguồn này</button>
         <button v-if="activeLayer.kind === 'video'" type="button" class="source-audio-action" @click="emit('convertVideoToGif', activeLayer.id)">Convert to GIF</button>
       </template>
-      <p v-else>Chọn một Avatar, Video hoặc Audio trong danh sách để đưa vào Timeline.</p>
+      <p v-else>Chọn Avatar hoặc Video để đưa vào Timeline. Audio chỉ được gắn trong kịch bản video.</p>
     </section>
   </section>
 </template>

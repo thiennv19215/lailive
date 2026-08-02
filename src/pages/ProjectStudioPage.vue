@@ -454,6 +454,22 @@ async function addLocalAudio(): Promise<void> {
   notice.value = `Đã thêm audio ${reference.label} vào Timeline. Bấm Phát để nghe.`;
 }
 
+function addAudioFromSourceMenu(): Promise<void> {
+  const selected = activeLayer.value;
+  // A selected video owns newly imported audio, avoiding an accidental audio-only script.
+  if (selected && (selected.kind === 'video' || isVideoAvatarSource(selected))) return addAudioForActiveAvatar(selected.id);
+  return addLocalAudio();
+}
+
+function setLayerAudio(layerId: string, muted: boolean, volume: number): void {
+  const layer = layers.value.find((candidate) => candidate.id === layerId);
+  if (!layer) return;
+  layer.muted = muted;
+  layer.volume = Math.max(0, Math.min(1, volume));
+  syncPlaybackController();
+  void publishPlayback();
+}
+
 async function addLocalVideo(): Promise<void> {
   const reference = await globalThis.window.desktopApi.media.pick('video', 'Thêm video');
   if (!reference) {
@@ -598,11 +614,11 @@ function isVideoAvatarSource(layer: StudioLayer): boolean {
     && mediaReferences.value.some((reference) => reference.id === layer.source.mediaReferenceId && reference.kind === 'video');
 }
 
-function addPreparedScript(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null): void {
-  addPreparedScriptInternal(type, mediaLayerId);
+function addPreparedScript(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null, role: ProjectPreparedScript['role'] = 'idle'): void {
+  addPreparedScriptInternal(type, mediaLayerId, role);
   // Assignment may change the new script's role synchronously; wait until it
   // has settled before deciding whether it belongs in the automatic waiting run.
-  void nextTick(startWaitingTimelineIfReady);
+  if (role === 'idle') void nextTick(startWaitingTimelineIfReady);
 }
 
 function sourceDisplayName(layer: StudioLayer): string {
@@ -803,7 +819,12 @@ function capturePreviewMediaAspectRatio(layerId: string, event: Event): void {
 }
 
 function previewMediaLayers(): StudioLayer[] {
-  return previewRenderableLayers.value.filter((layer) => layer.kind === 'video' || layer.kind === 'gif' || layer.kind === 'image' || layer.kind === 'avatar');
+  const visualLayers = previewRenderableLayers.value.filter((layer) => layer.kind === 'video' || layer.kind === 'gif' || layer.kind === 'image' || layer.kind === 'avatar');
+  // Audio has no canvas footprint, so it is intentionally excluded from the
+  // visual-layer collection. It still needs a media element in Studio for a
+  // prepared video + audio script to actually play its companion track.
+  const audioLayers = layers.value.filter((layer) => layer.kind === 'audio' && isPreviewRenderable(layer, loadedPreviewMediaIds.value));
+  return [...visualLayers, ...audioLayers];
 }
 
 function previewUsesVideo(layer: StudioLayer): boolean {
@@ -1320,7 +1341,7 @@ function selectVoice(option: string): void {
     <div class="studio-left-stack">
       <section class="avatar-state-controls"><strong>Chuyển động avatar</strong><div><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></div></section>
 
-      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @add-builtin="addLayer" @remove="removeLayer" @select="activeLayerIndex = $event" @set-avatar-motion="setAvatarMotion" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
+      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addAudioFromSourceMenu()" @import-avatar="avatarAddOpen = true" @add-builtin="addLayer" @remove="removeLayer" @select="activeLayerIndex = $event" @set-avatar-motion="setAvatarMotion" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
     </div>
 
     <main class="studio-canvas-wrap">
@@ -1385,7 +1406,7 @@ function selectVoice(option: string): void {
       @open-settings="dialog = 'livestream'"
     />
 
-    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" @open-prepared-scripts="preparedScriptsOpen = true" @start-sequence="playbackStart" @play-script="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
+    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" :layers="layers" :active-layer-index="activeLayerIndex" @open-prepared-scripts="preparedScriptsOpen = true" @start-sequence="playbackStart" @play-script="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @select-layer="activeLayerIndex = $event" @set-layer-audio="setLayerAudio" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
 
     <div v-if="avatarLibraryOpen" class="studio-dialog-backdrop" @click.self="avatarLibraryOpen = false">
       <section class="studio-dialog avatar-library-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-library-title">

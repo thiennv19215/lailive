@@ -62,12 +62,15 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     });
     return publishTail;
   }
-  function add(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null): void {
+  function add(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null, role: PreparedScriptRole = 'idle'): void {
     if (scripts().length >= 20) return options.onPublishError('Kịch bản chờ đã đủ 20 mục.');
     const order = scripts().length;
     const layer = mediaLayerId ? options.layers.value.find((candidate) => candidate.id === mediaLayerId) : undefined;
-    scripts().push({ id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? 'Thoại chờ'}`, enabled: true, order, playbackType: type, role: 'idle', mediaLayerId, audioLayerId: null, avatarLayerId: null, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: 'after-current', completionMode: 'resume-sequence' });
+    const label = role === 'activation' ? 'Cảnh ưu tiên' : role === 'conversation' ? 'Phản hồi tức thời' : 'Thoại chờ';
+    const script: ProjectPreparedScript = { id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? label}`, enabled: true, order, playbackType: type, role, mediaLayerId, audioLayerId: null, avatarLayerId: null, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: role === 'idle' ? 'after-current' : 'immediate', completionMode: 'resume-sequence' };
+    scripts().push(script);
     sync();
+    if (role !== 'idle') controller.playPriority(script.id);
   }
   function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }
   function removeForLayer(layerId: string): void {

@@ -97,15 +97,16 @@ export class PreparedScriptPlaybackController {
       this.sequenceActive = false;
       return this.activate(script);
     }
+    return this.playPriority(script.id);
+  }
+
+  playPriority(scriptId: string): boolean {
+    const script = this.script(scriptId);
+    if (!script || !script.enabled || script.role === 'idle') return this.fail('Priority script is unavailable.');
     const active = this.snapshotValue.activeScriptId ? this.script(this.snapshotValue.activeScriptId) : undefined;
-    // Replies never overlap. Activation is a boundary action: let the current
-    // automatic clip finish before activating it. Conversation can still pause
-    // the background immediately for a live customer response.
+    // Priority scenes interrupt the background immediately. Further priority
+    // requests remain FIFO so audio/video never overlap before idle resumes.
     if (active && active.role !== 'idle') return this.enqueue(script.id, true);
-    if (active?.role === 'idle' && role === 'activation') {
-      this.resumeIdleAfterOrder = active.order + 1;
-      return this.enqueue(script.id, true);
-    }
     if (active?.role === 'idle') {
       this.suspendedIdleScriptId = active.id;
       this.resumeIdleAfterOrder = null;
