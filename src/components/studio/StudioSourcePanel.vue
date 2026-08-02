@@ -19,6 +19,7 @@ const emit = defineEmits<{
   select: [index: number];
   assign: [layerId: string, role: PreparedScriptRole];
   addAudio: [layerId: string];
+  convertVideoToGif: [layerId: string];
   editScripts: [];
 }>();
 
@@ -74,6 +75,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeImportMen
           <button type="button" :class="{ active: activeScript?.role === 'conversation' }" @click="emit('assign', activeLayer.id, 'conversation')">+ Phản hồi tức thời</button>
         </div>
         <button v-if="activeLayer.kind === 'video' || activeLayer.kind === 'avatar'" type="button" class="source-audio-action" @click="emit('addAudio', activeLayer.id)">+ Gắn audio cho nguồn này</button>
+        <button v-if="activeLayer.kind === 'video'" type="button" class="source-audio-action" @click="emit('convertVideoToGif', activeLayer.id)">Convert to GIF</button>
       </template>
       <p v-else>Chọn một Avatar, Video hoặc Audio trong danh sách để đưa vào Timeline.</p>
     </section>

@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   mediaCheck: 'media:check',
   mediaPick: 'media:pick',
   mediaRead: 'media:read',
+  mediaConvertVideoToGif: 'media:convert-video-to-gif',
   liveGetSnapshot: 'live:get-snapshot',
   liveProbe: 'live:probe',
   liveConnect: 'live:connect',

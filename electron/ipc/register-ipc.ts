@@ -10,7 +10,7 @@ import type { SettingsDatabase } from '../services/database';
 import { auxiliaryWindowNameSchema } from '../../src/shared/validation/auxiliary-window';
 import type { AuxiliaryWindowName, AuxiliaryWindowOpenResult } from '../../src/shared/contracts/auxiliary-windows';
 import { projectCreateSchema, projectIdPayloadSchema, projectImportSchema, projectMediaCheckSchema, projectMediaPickSchema, projectMediaReferenceSchema, projectRenameSchema, projectSceneWriteSchema } from '../../src/shared/validation/projects';
-import { inspectMediaReferences, readMediaDataUrl } from '../services/media-files';
+import { convertVideoToGif, inspectMediaReferences, readMediaDataUrl } from '../services/media-files';
 import { GLOBAL_SETTINGS_KEY } from '../../src/shared/contracts/global-settings';
 import type { LiveSessionService } from '../services/live-connector';
 import type { AiProviderService } from '../services/ai-provider';
@@ -149,6 +149,7 @@ export function registerIpcHandlers(
     return inspectMediaReferences(references);
   });
   ipcMain.handle(IPC_CHANNELS.mediaRead, (_event, payload: unknown) => readMediaDataUrl(projectMediaReferenceSchema.parse(payload)));
+  ipcMain.handle(IPC_CHANNELS.mediaConvertVideoToGif, (_event, payload: unknown) => convertVideoToGif(projectMediaReferenceSchema.parse(payload), path.join(app.getPath('userData'), 'generated-media')));
   ipcMain.handle(IPC_CHANNELS.mediaPick, async (event, payload: unknown) => {
     const parsed = projectMediaPickSchema.parse(payload);
     const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;

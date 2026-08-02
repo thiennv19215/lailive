@@ -38,6 +38,7 @@ const api: DesktopApi = {
     check: (references) => ipcRenderer.invoke(IPC_CHANNELS.mediaCheck, { references }),
     pick: (kind, label) => ipcRenderer.invoke(IPC_CHANNELS.mediaPick, { kind, label }),
     read: (reference) => ipcRenderer.invoke(IPC_CHANNELS.mediaRead, reference),
+    convertVideoToGif: (reference) => ipcRenderer.invoke(IPC_CHANNELS.mediaConvertVideoToGif, reference),
   },
   live: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.liveGetSnapshot),

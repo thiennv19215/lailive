@@ -279,6 +279,7 @@ export function installDevBridge(): void {
       check: async (references) => projectMediaCheckSchema.parse({ references }).references.map((reference) => ({ ...reference, exists: false })),
       pick: async () => null,
       read: async () => null,
+      convertVideoToGif: async () => { throw new Error('Chuyển video sang GIF cần chạy trong ứng dụng Electron.'); },
     },
     live: {
       getSnapshot: async () => globalThis.structuredClone(liveSnapshot),

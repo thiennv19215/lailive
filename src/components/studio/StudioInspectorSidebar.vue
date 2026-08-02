@@ -9,6 +9,7 @@ const props = defineProps<{
   activeLayerKind?: ProjectSceneLayer['kind'];
   activeAvatarState?: ProjectSceneLayer['avatarState'];
   avatarPreviewState?: 'idle' | 'talking';
+  chromaKey?: ProjectSceneLayer['chromaKey'];
   textHistoryPastCount: number;
   textHistoryFutureCount: number;
   imageHistoryPastCount: number;
@@ -21,9 +22,6 @@ const props = defineProps<{
 const textStyle = defineModel<StudioTextStyle>('textStyle', { required: true });
 const activeTextPresetId = defineModel<string | null>('activeTextPresetId', { required: true });
 const imageRadius = defineModel<number>('imageRadius', { required: true });
-const removeImageBackground = defineModel<boolean>('removeImageBackground', { required: true });
-const backgroundColor = defineModel<string>('backgroundColor', { required: true });
-const backgroundSensitivity = defineModel<number>('backgroundSensitivity', { required: true });
 const textContentElement = ref<HTMLTextAreaElement | null>(null);
 
 const emit = defineEmits<{
@@ -34,6 +32,7 @@ const emit = defineEmits<{
   editAvatar: [];
   setAvatarLayerState: [state: 'idle' | 'talking'];
   setAvatarPreviewState: [state: 'idle' | 'talking'];
+  updateChromaKey: [patch: Partial<ProjectSceneLayer['chromaKey']>];
   finishTextEdit: [];
   markTextCustom: [];
   openSettings: [];
@@ -70,17 +69,18 @@ watch(() => props.focusTextRequest, async () => {
         <div class="text-preset-grid" aria-label="Kiểu cài sẵn"><button v-for="preset in TEXT_STYLE_PRESETS" :key="preset.id" type="button" :class="{ active: activeTextPresetId === preset.id }" :aria-label="preset.label" :aria-pressed="activeTextPresetId === preset.id" @click="emit('applyTextPreset', preset)">{{ preset.preview }}</button></div>
       </div>
     </section>
-    <section v-else-if="activeLayerKind === 'image'" class="source-properties-panel">
+    <section v-else-if="activeLayerKind === 'image' || activeLayerKind === 'gif'" class="source-properties-panel">
       <header><strong>Chỉnh sửa hình ảnh</strong><div class="inspector-history"><button type="button" aria-label="Hoàn tác lớp" :disabled="!imageHistoryPastCount" @click="emit('undoInspector')">↶</button><button type="button" aria-label="Làm lại lớp" :disabled="!imageHistoryFutureCount" @click="emit('redoInspector')">↷</button></div></header>
-      <div class="source-properties-scroll"><label>Bo góc <b>{{ imageRadius }}px</b><input v-model.number="imageRadius" type="range" min="0" max="120" @focus="emit('captureImageEdit')" @change="emit('commitImageEdit')" /></label><label class="property-checkbox">Cắt nền<input v-model="removeImageBackground" type="checkbox" /></label><label :class="{ disabled: !removeImageBackground }">Màu nền<input v-model="backgroundColor" type="color" :disabled="!removeImageBackground" /></label><label :class="{ disabled: !removeImageBackground }">Độ nhạy <b>{{ backgroundSensitivity }}</b><input v-model.number="backgroundSensitivity" type="range" min="0" max="100" :disabled="!removeImageBackground" /></label></div>
+      <div class="source-properties-scroll"><label>Bo góc <b>{{ imageRadius }}px</b><input v-model.number="imageRadius" type="range" min="0" max="120" @focus="emit('captureImageEdit')" @change="emit('commitImageEdit')" /></label><div class="chroma-key-controls"><label class="property-checkbox">Xóa phông màu<input type="checkbox" :checked="chromaKey?.enabled ?? false" @change="emit('updateChromaKey', { enabled: ($event.target as HTMLInputElement).checked })" /></label><template v-if="chromaKey?.enabled"><label>Màu phông<input :value="chromaKey.color" type="color" aria-label="Màu phông cần xóa" @input="emit('updateChromaKey', { color: ($event.target as HTMLInputElement).value })" /></label><label>Độ nhạy <b>{{ chromaKey.tolerance }}</b><input :value="chromaKey.tolerance" type="range" min="0" max="100" aria-label="Độ nhạy xóa phông" @input="emit('updateChromaKey', { tolerance: Number(($event.target as HTMLInputElement).value) })" /></label></template><small>Chọn màu giống nền của tệp; thay đổi hiển thị ngay trên khung preview.</small></div></div>
     </section>
-    <section v-else-if="activeLayerKind === 'avatar'" class="avatar-script-panel">
+    <section v-else-if="activeLayerKind === 'avatar'" class="source-properties-panel">
       <header><strong>Avatar & chuyển động</strong><div class="inspector-history"><button type="button" aria-label="Hoàn tác lớp" :disabled="!avatarHistoryPastCount" @click="emit('undoInspector')">↶</button><button type="button" aria-label="Làm lại lớp" :disabled="!avatarHistoryFutureCount" @click="emit('redoInspector')">↷</button></div></header>
-      <div class="avatar-motion-controls">
+      <div class="source-properties-scroll avatar-motion-controls">
         <p><b>Chờ</b> là video/GIF lặp khi chưa có lời thoại. Muốn có tiếng, thêm audio vào kịch bản của avatar này rồi phát kịch bản.</p>
         <strong>Video này là</strong>
         <div><button type="button" :class="{ active: activeAvatarState === 'idle' }" @click="emit('setAvatarLayerState', 'idle')">Chờ</button><button type="button" :class="{ active: activeAvatarState === 'talking' }" @click="emit('setAvatarLayerState', 'talking')">Đang nói</button></div>
         <p>Điều khiển phát và audio nằm ở <b>Timeline kịch bản</b> phía dưới.</p>
+        <div class="chroma-key-controls"><label class="property-checkbox">Xóa phông màu<input type="checkbox" :checked="chromaKey?.enabled ?? false" @change="emit('updateChromaKey', { enabled: ($event.target as HTMLInputElement).checked })" /></label><template v-if="chromaKey?.enabled"><label>Màu phông<input :value="chromaKey.color" type="color" aria-label="Màu phông cần xóa" @input="emit('updateChromaKey', { color: ($event.target as HTMLInputElement).value })" /></label><label>Độ nhạy <b>{{ chromaKey.tolerance }}</b><input :value="chromaKey.tolerance" type="range" min="0" max="100" aria-label="Độ nhạy xóa phông" @input="emit('updateChromaKey', { tolerance: Number(($event.target as HTMLInputElement).value) })" /></label></template><small>Chọn màu giống nền của GIF/video; thay đổi hiển thị ngay trên khung preview.</small></div>
       </div>
     </section>
     <section v-else class="interaction-panel">

@@ -1083,3 +1083,24 @@ Continue reducing the template-center mismatch with additional independently sou
 
 - Video layers now report their intrinsic aspect ratio to Studio after loading. A `contain` selection frame uses that real ratio rather than a larger assumed layout box.
 - Validation passes: `pnpm typecheck`, `pnpm lint`, and focused Studio preview tests (8/8). Browser QA selected `Video hoa 13`; the selection and rendered layer bounds were identical, with no console warnings or errors.
+
+## Session update - video to GIF conversion
+
+- Studio now offers `Convert to GIF` for a selected local video. The typed Electron IPC invokes local FFmpeg, limits conversion to 15 seconds at 12 FPS/480px, saves the generated GIF in app data without overwriting the source video, and adds it as a GIF source.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, and `git diff --check`. Browser QA confirms selecting `Video hoa 13` exposes `Convert to GIF` with no console warnings or errors; conversion itself intentionally requires Electron rather than the browser-only dev bridge.
+
+## Session update - green-screen avatar removal
+
+- Image avatars with a green screen now use the existing per-layer chroma pipeline in Studio. Newly added image avatars receive the green key by default, while existing saved image avatars are repaired on project load and persisted.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, focused chroma/Studio preview tests (10/10), and `git diff --check`.
+
+## Session update - per-source chroma-key controls
+
+- The Studio inspector now exposes a working per-source `Xóa phông màu` control for images, GIFs, and avatars, with a background-color picker and sensitivity slider. The controls update the selected layer's chroma key immediately, are persisted by the existing autosave flow, and are used by both Studio preview and Browser Source.
+- The older global image-background fields no longer masquerade as a source-level removal control.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, focused chroma/Studio preview tests (10/10), and `git diff --check`. In-app Browser QA at `http://127.0.0.1:5173/#/projects/perfume` selected a GIF source, revealed the chroma controls, enabled the color picker and sensitivity slider, restored the prior state, and reported no console warnings or errors.
+
+## Session update - immediate imported-media persistence
+
+- Adding local image, video, audio, avatar, or a converted GIF now writes the updated scene and media references immediately after the source is accepted. Repairing a missing-media path does the same, so closing the desktop app before the prior 350 ms autosave delay cannot discard an imported source.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, focused project validation/database/Studio preview tests (25/25), and `git diff --check`. Browser smoke at `http://127.0.0.1:5173/#/projects/perfume` rendered Studio without framework overlay or console warnings/errors; native picker persistence still requires Electron rather than the browser-only dev bridge.

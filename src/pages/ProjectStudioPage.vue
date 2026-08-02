@@ -304,6 +304,7 @@ onMounted(async () => {
   const project = await globalThis.window.desktopApi.projects.get(projectId).catch(() => null);
   let repairedDuplicateLayerIds = false;
   let repairedDuplicateAvatarMotions = false;
+  let repairedAvatarChromaKey = false;
   if (project) {
     projectTitle.value = project.title;
     persistedScene.value = clonePlain(project.scene);
@@ -331,6 +332,14 @@ onMounted(async () => {
       if (saved) trigger.enabled = saved.enabled;
     }
     mediaReferences.value = clonePlain(project.scene.mediaReferences);
+    for (const layer of layers.value) {
+      const reference = layer.source.mediaReferenceId ? mediaReferences.value.find((item) => item.id === layer.source.mediaReferenceId) : undefined;
+      if (layer.kind === 'avatar' && reference?.kind === 'image' && !layer.chromaKey.enabled) {
+        layer.chromaKey = { enabled: true, color: '#00ff00', tolerance: 32 };
+        repairedAvatarChromaKey = true;
+      }
+    }
+    if (repairedAvatarChromaKey) persistedScene.value.layers = clonePlain(layers.value);
     repairedDuplicateAvatarMotions = syncAvatarVideoStates();
     projectLoaded.value = true;
     autosaveStatus.value = 'saved';
@@ -344,8 +353,10 @@ onMounted(async () => {
   else notice.value = 'Không tìm thấy dữ liệu dự án local; đang mở scene mock an toàn.';
   await nextTick();
   hydratingProject.value = false;
-  if (repairedDuplicateLayerIds || repairedDuplicateAvatarMotions) {
-    notice.value = repairedDuplicateAvatarMotions
+  if (repairedDuplicateLayerIds || repairedDuplicateAvatarMotions || repairedAvatarChromaKey) {
+    notice.value = repairedAvatarChromaKey
+      ? 'Enabled green-screen removal for the image avatar.'
+      : repairedDuplicateAvatarMotions
       ? 'Đã tách avatar bị trùng trạng thái để các video không che lẫn nhau.'
       : 'Đã sửa ID nguồn bị trùng để trình chỉnh sửa hoạt động ổn định.';
     await saveSceneNow();
@@ -431,6 +442,7 @@ async function addLocalAudio(): Promise<void> {
   activeLayerIndex.value = 0;
   if (dataUrl) audioSources.value = { ...audioSources.value, [reference.id]: dataUrl };
   await refreshMediaStatus();
+  await saveSceneNow();
   notice.value = `Đã thêm audio ${reference.label} vào canvas.`;
 }
 
@@ -449,7 +461,33 @@ async function addLocalVideo(): Promise<void> {
   await refreshMediaStatus();
   await publishPlayback();
   await refreshSceneRuntimeUrl();
+  await saveSceneNow();
   notice.value = `Đã thêm video ${reference.label} vào canvas.`;
+}
+
+async function convertVideoLayerToGif(layerId: string): Promise<void> {
+  const layer = layers.value.find((candidate) => candidate.id === layerId);
+  const referenceId = layer?.source.mediaReferenceId;
+  const reference = referenceId ? mediaReferences.value.find((candidate) => candidate.id === referenceId) : undefined;
+  if (!layer || !reference || reference.kind !== 'video') {
+    notice.value = 'Select a local video before converting it to GIF.';
+    return;
+  }
+  notice.value = 'Converting video to GIF (up to 15 seconds)...';
+  try {
+    const gif = await globalThis.window.desktopApi.media.convertVideoToGif(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference);
+    const dataUrl = await globalThis.window.desktopApi.media.read(gif);
+    mediaReferences.value.push(gif);
+    layers.value.unshift(createLayer(gif.label, 'gif', { type: 'media', assetId: null, mediaReferenceId: gif.id }));
+    activeLayerIndex.value = 0;
+    if (dataUrl) imageSources.value = { ...imageSources.value, [gif.id]: dataUrl };
+    await refreshMediaStatus();
+    await publishPlayback();
+    await saveSceneNow();
+    notice.value = `Created GIF from ${reference.label}.`;
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : 'Could not convert the video to GIF.';
+  }
 }
 
 async function addLocalImage(): Promise<void> {
@@ -467,6 +505,7 @@ async function addLocalImage(): Promise<void> {
   await refreshMediaStatus();
   await publishPlayback();
   await refreshSceneRuntimeUrl();
+  await saveSceneNow();
   notice.value = `Đã thêm ảnh ${reference.label} vào canvas.`;
 }
 
@@ -1089,6 +1128,8 @@ async function saveAvatarMock(): Promise<void> {
   const layer = createLayer(avatarName.value.trim(), 'avatar', { type: 'media', assetId: null, mediaReferenceId: reference.id });
   layer.loop = true;
   layer.muted = true;
+  // GIF avatars commonly use a green screen instead of alpha transparency.
+  if (reference.kind === 'image') layer.chromaKey = { enabled: true, color: '#00ff00', tolerance: 32 };
   layer.avatarState = 'idle';
   layer.avatarMotion = null;
   layers.value.unshift(layer);
@@ -1099,6 +1140,7 @@ async function saveAvatarMock(): Promise<void> {
   await publishPlayback();
   await refreshSceneRuntimeUrl();
   syncAvatarVideoStates();
+  await saveSceneNow();
   avatarAddOpen.value = false;
   avatarLibraryOpen.value = false;
   notice.value = `Đã thêm “${layer.name}” làm avatar. Gán avatar này vào từng kịch bản chờ để VAS chỉ phát một avatar mỗi lúc.`;
@@ -1121,6 +1163,7 @@ async function repairMedia(reference: ProjectMediaStatus): Promise<void> {
   if (index < 0) return;
   mediaReferences.value[index] = { ...reference, path: replacement.path };
   await refreshMediaStatus();
+  await saveSceneNow();
   notice.value = `Đã cập nhật tệp cho “${reference.label}”.`;
 }
 
@@ -1162,6 +1205,11 @@ function redoTextEdit(): void {
 
 function captureImageBeforeEdit(): void {
   imageEditSnapshot = imageRadius.value;
+}
+
+function updateActiveLayerChromaKey(patch: Partial<ProjectSceneLayer['chromaKey']>): void {
+  if (!activeLayer.value) return;
+  activeLayer.value.chromaKey = { ...activeLayer.value.chromaKey, ...patch };
 }
 
 function commitImageEdit(): void {
@@ -1239,7 +1287,7 @@ function selectVoice(option: string): void {
     <div class="studio-left-stack">
       <section class="avatar-state-controls"><strong>Chuyển động avatar</strong><div><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></div></section>
 
-      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @edit-scripts="preparedScriptsOpen = true" />
+      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
     </div>
 
     <main class="studio-canvas-wrap">
@@ -1247,7 +1295,7 @@ function selectVoice(option: string): void {
       <div class="studio-grid">
         <div ref="scenePosterElement" class="scene-poster live-frame" :class="{ 'has-authored-scene': previewRenderableLayers.length > 0 }">
           <template v-for="layer in previewMediaLayers()" :key="`preview-media-${layer.id}`">
-            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id || playlistSnapshot.activeAudioLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="Math.max(playlistSnapshot.playbackRevision, avatarVideoSnapshot.revision)" :resume-playback="playlistSnapshot.resumeActiveMedia" :speech-managed="preparedScripts().some((script) => script.avatarLayerId === layer.id && script.playbackType === 'tts')" :speech-active="playlistSnapshot.activeAvatarLayerId === layer.id" :motion-controlled="layer.kind === 'avatar' && Boolean(layer.avatarMotion)" :motion-active="avatarVideoSnapshot.activeLayerId === layer.id || avatarVideoSnapshot.pendingLayerId === layer.id || avatarVideoSnapshot.previousLayerId === layer.id" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @dimensions="storePreviewMediaAspectRatio" @motion-ready="avatarMotionReady" @motion-ended="avatarMotionEnded" @ended="(layerId) => playlistSnapshot.activeScriptId && layerId === playlistSnapshot.activeLayerId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
+            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio' || layer.chromaKey.enabled" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : previewUsesVideo(layer) ? 'video' : 'image'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id || playlistSnapshot.activeAudioLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="Math.max(playlistSnapshot.playbackRevision, avatarVideoSnapshot.revision)" :resume-playback="playlistSnapshot.resumeActiveMedia" :speech-managed="preparedScripts().some((script) => script.avatarLayerId === layer.id && script.playbackType === 'tts')" :speech-active="playlistSnapshot.activeAvatarLayerId === layer.id" :motion-controlled="layer.kind === 'avatar' && Boolean(layer.avatarMotion)" :motion-active="avatarVideoSnapshot.activeLayerId === layer.id || avatarVideoSnapshot.pendingLayerId === layer.id || avatarVideoSnapshot.previousLayerId === layer.id" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @dimensions="storePreviewMediaAspectRatio" @motion-ready="avatarMotionReady" @motion-ended="avatarMotionEnded" @ended="(layerId) => playlistSnapshot.activeScriptId && layerId === playlistSnapshot.activeLayerId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
             <div v-else class="scene-runtime-layer scene-runtime-media" :data-media-kind="layer.kind" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="previewMediaSource(layer) ?? ''" :alt="layer.name" :style="{ objectFit: previewMediaObjectFit(layer) as 'contain' | 'cover' | 'fill' }" @load="capturePreviewMediaAspectRatio(layer.id, $event)" /></div>
           </template>
           <div v-if="!previewRenderableLayers.length" class="empty-frame"><strong>Khung live đang trống</strong><span>Thêm media có nguồn rõ ràng để bắt đầu.</span></div>
@@ -1275,12 +1323,10 @@ function selectVoice(option: string): void {
       v-model:text-style="textStyle"
       v-model:active-text-preset-id="activeTextPresetId"
       v-model:image-radius="imageRadius"
-      v-model:remove-image-background="removeImageBackground"
-      v-model:background-color="backgroundColor"
-      v-model:background-sensitivity="backgroundSensitivity"
       :active-layer-kind="activeLayer?.kind"
       :active-avatar-state="activeLayer?.avatarState"
       :avatar-preview-state="avatarPreviewState"
+      :chroma-key="activeLayer?.chromaKey"
       :focus-text-request="textFocusRequest"
       :text-history-past-count="textHistoryPast.length"
       :text-history-future-count="textHistoryFuture.length"
@@ -1301,6 +1347,7 @@ function selectVoice(option: string): void {
       @redo-inspector="redoInspector"
       @set-avatar-layer-state="setActiveAvatarLayerState"
       @set-avatar-preview-state="setAvatarPreviewState"
+      @update-chroma-key="updateActiveLayerChromaKey"
       @edit-avatar="openAvatarScriptEditor"
       @open-settings="dialog = 'livestream'"
     />

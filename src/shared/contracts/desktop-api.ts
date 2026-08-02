@@ -41,6 +41,7 @@ export interface DesktopApi {
     check(references: ProjectMediaReference[]): Promise<ProjectMediaStatus[]>;
     pick(kind: ProjectMediaKind, label: string): Promise<ProjectMediaReference | null>;
     read(reference: ProjectMediaReference): Promise<string | null>;
+    convertVideoToGif(reference: ProjectMediaReference): Promise<ProjectMediaReference>;
   };
   live: {
     getSnapshot(): Promise<LiveSessionSnapshot>;
