@@ -1,8 +1,8 @@
 <script setup lang="ts">
-/* global HTMLElement */
+/* global HTMLElement, MouseEvent, Node, document */
 import { AudioLines, Clapperboard, Image, Plus, Type, UserRound, X } from '@lucide/vue';
-import { computed, nextTick, onMounted, ref } from 'vue';
-import type { PreparedScriptRole, ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import type { PreparedScriptRole, ProjectMediaKind, ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
 
 const props = defineProps<{
   layers: ProjectSceneLayer[];
@@ -13,7 +13,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  add: [];
+  importMedia: [kind: ProjectMediaKind];
+  importAvatar: [];
   remove: [index: number];
   select: [index: number];
   assign: [layerId: string, role: PreparedScriptRole];
@@ -22,6 +23,8 @@ const emit = defineEmits<{
 }>();
 
 const sourceListElement = ref<HTMLElement | null>(null);
+const sourceMenuElement = ref<HTMLElement | null>(null);
+const importMenuOpen = ref(false);
 const activeLayer = computed(() => props.activeLayerIndex === null ? null : props.layers[props.activeLayerIndex] ?? null);
 const activeCanScript = computed(() => Boolean(activeLayer.value && ['avatar', 'video', 'audio'].includes(activeLayer.value.kind)));
 const activeScript = computed(() => activeLayer.value
@@ -36,13 +39,19 @@ onMounted(async () => {
   await nextTick();
   if (sourceListElement.value) sourceListElement.value.scrollTop = 62;
 });
+
+function closeImportMenu(event: MouseEvent): void {
+  if (!sourceMenuElement.value?.contains(event.target as Node)) importMenuOpen.value = false;
+}
+onMounted(() => document.addEventListener('pointerdown', closeImportMenu));
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeImportMenu));
 </script>
 
 <template>
   <section class="source-panel source-workspace">
     <header>
       <strong>Nguồn</strong>
-      <button type="button" :aria-label="primaryAction" @click="emit('add')"><Plus :size="17" /></button>
+      <div ref="sourceMenuElement" class="source-import-menu"><button type="button" :aria-label="primaryAction" :aria-expanded="importMenuOpen" @click="importMenuOpen = !importMenuOpen"><Plus :size="17" /></button><div v-if="importMenuOpen" class="source-import-options"><strong>Thêm từ máy</strong><button type="button" @click="emit('importMedia', 'video'); importMenuOpen = false"><Clapperboard :size="14" />Video</button><button type="button" @click="emit('importMedia', 'image'); importMenuOpen = false"><Image :size="14" />Ảnh</button><button type="button" @click="emit('importMedia', 'audio'); importMenuOpen = false"><AudioLines :size="14" />Audio</button><button type="button" @click="emit('importAvatar'); importMenuOpen = false"><UserRound :size="14" />Avatar</button></div></div>
     </header>
     <ul ref="sourceListElement">
       <li v-for="(layer, index) in layers" :key="layer.id" :data-layer-id="layer.id" :class="{ active: activeLayerIndex === index }" @click="emit('select', index)">

@@ -1048,3 +1048,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - compact avatar workspace
 
 - Reduced the Avatar asset area and converted the avatar state picker into a compact horizontal strip, giving the source list and script preparation area substantially more vertical space.
+
+## Session update - source import shortcut
+
+- The `+` control in `Nguồn` now opens a compact import menu for local Video, Image, Audio, or Avatar files instead of adding a generic placeholder layer.
