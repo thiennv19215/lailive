@@ -36,6 +36,31 @@ describe('prepared script playback controller', () => {
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
   });
 
+  it('continues with the next waiting script if the interrupted one is removed', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [
+      settings.scripts[0]!,
+      settings.scripts[1]!,
+      { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 2, mediaLayerId: 'video-r2' },
+    ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
+    controller.startSequence();
+    controller.playRole('activation');
+    controller.removeScripts(['r1']);
+    const priorityRevision = controller.snapshot().playbackRevision;
+    controller.onEnded('r2', priorityRevision);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
+  });
+
+  it('does not resume a waiting video after a manual immediate playback replaces the priority reply', () => {
+    const controller = new PreparedScriptPlaybackController(); controller.configure(settings, layers);
+    controller.startSequence();
+    controller.playRole('activation');
+    expect(controller.playScript('r3')).toBe(true);
+    const revision = controller.snapshot().playbackRevision;
+    controller.onEnded('r3', revision);
+    expect(controller.snapshot().activeScriptId).toBeNull();
+  });
+
   it('queues after-current scripts while immediate scripts interrupt', () => {
     const controller = new PreparedScriptPlaybackController(); controller.configure(settings, layers); controller.startSequence();
     expect(controller.playScript('r2')).toBe(true);

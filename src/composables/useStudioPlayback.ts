@@ -58,12 +58,14 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
   }
   function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }
   function removeForLayer(layerId: string): void {
-    const removedActive = snapshot.value.activeLayerId === layerId || snapshot.value.activeAudioLayerId === layerId || snapshot.value.activeAvatarLayerId === layerId;
-    const remaining = scripts().filter((script) => script.mediaLayerId !== layerId && script.audioLayerId !== layerId && script.avatarLayerId !== layerId);
+    const removedScripts = scripts().filter((script) => script.mediaLayerId === layerId || script.audioLayerId === layerId || script.avatarLayerId === layerId);
+    const remaining = scripts().filter((script) => !removedScripts.includes(script));
     if (remaining.length === scripts().length) return;
+    const removedActive = removedScripts.some((script) => script.id === snapshot.value.activeScriptId);
+    if (removedActive) cancelTts();
+    controller.removeScripts(removedScripts.map((script) => script.id));
     scripts().splice(0, scripts().length, ...remaining);
     normalize();
-    if (removedActive) controller.stop();
     sync();
   }
   function move(index: number, delta: number): void { const target = index + delta; if (target < 0 || target >= scripts().length) return; [scripts()[index], scripts()[target]] = [scripts()[target]!, scripts()[index]!]; normalize(); sync(); }

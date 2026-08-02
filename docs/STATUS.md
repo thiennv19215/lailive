@@ -1013,3 +1013,10 @@ Continue reducing the template-center mismatch with additional independently sou
 - Waiting Timeline media no longer loops itself. When one video finishes, Studio and the loopback Browser Source both report the matching revision and advance to the next waiting script; the sequence stops only after the final waiting item.
 - Browser Source completion callbacks are schema-validated, limited to `127.0.0.1`, and rejected if they do not match the current script, layer, and playback revision.
 - Validation: `pnpm typecheck`, focused prepared-playback and Scene Runtime tests, and `git diff --check` pass.
+
+## Session update - priority interruption cleanup
+
+- Removing the active source now cancels its TTS work before stopping playback. Removing a waiting source while a priority reply is active continues at the following waiting item instead of stopping the timeline.
+- A direct immediate play clears the suspended waiting item, preventing an unintended resume after an operator explicitly replaces a priority reply.
+- Removing the final layer that uses a local media reference removes that reference and its in-memory preview source from the project; the original external file is never deleted.
+- Validation: `pnpm typecheck`, focused playback/runtime tests, changed-file ESLint, and `git diff --check` pass.

@@ -523,6 +523,13 @@ function removeLayer(index: number): void {
   if (!layer) return;
   removePreparedScriptsForLayer(layer.id);
   layers.value.splice(index, 1);
+  const mediaReferenceId = layer.source.mediaReferenceId;
+  if (mediaReferenceId && !layers.value.some((candidate) => candidate.source.mediaReferenceId === mediaReferenceId)) {
+    mediaReferences.value = mediaReferences.value.filter((reference) => reference.id !== mediaReferenceId);
+    videoSources.value = Object.fromEntries(Object.entries(videoSources.value).filter(([id]) => id !== mediaReferenceId));
+    audioSources.value = Object.fromEntries(Object.entries(audioSources.value).filter(([id]) => id !== mediaReferenceId));
+    imageSources.value = Object.fromEntries(Object.entries(imageSources.value).filter(([id]) => id !== mediaReferenceId));
+  }
   if (activeLayerIndex.value === index) activeLayerIndex.value = null;
   else if (activeLayerIndex.value !== null && activeLayerIndex.value > index) activeLayerIndex.value -= 1;
   notice.value = `Đã xoá nguồn “${layer.name}” và mọi mục Timeline dùng nguồn này.`;
