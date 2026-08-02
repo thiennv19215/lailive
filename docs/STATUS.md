@@ -1057,3 +1057,8 @@ Continue reducing the template-center mismatch with additional independently sou
 
 - Removed the obsolete Studio tool rail (Avatar, background, video, sticker, and text). Local media is now added only through the `Nguồn +` menu, leaving more room for the source list and preview canvas.
 - Reflowed the desktop and responsive Studio grids so the source panel, canvas, sidebar, and script board retain their expected positions without the removed column.
+
+## Session update - streamlined video and audio scripts
+
+- Simplified the detailed Script dialog to just the playback lane, video source, and optional attached local audio for each R item. The unused avatar and TTS text fields are hidden until that workflow is developed.
+- Fixed the dialog content region so its script list scrolls inside the dialog instead of extending beneath its header and controls.

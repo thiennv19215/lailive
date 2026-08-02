@@ -614,24 +614,6 @@ function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string,
   return style;
 }
 
-async function pickAudioForPreparedScript(scriptId: string): Promise<void> {
-  const script = preparedScripts().find((item) => item.id === scriptId);
-  if (!script) return;
-  const reference = await globalThis.window.desktopApi.media.pick('audio', `Audio cho ${script.name}`);
-  if (!reference) return;
-  const dataUrl = await globalThis.window.desktopApi.media.read(JSON.parse(JSON.stringify(reference)) as ProjectMediaReference);
-  mediaReferences.value.push(reference);
-  const layer = createLayer(reference.label, 'audio', { type: 'media', assetId: null, mediaReferenceId: reference.id });
-  layers.value.unshift(layer);
-  audioSources.value = dataUrl ? { ...audioSources.value, [reference.id]: dataUrl } : audioSources.value;
-  script.playbackType = 'audio';
-  script.mediaLayerId = layer.id;
-  script.audioLayerId = null;
-  await refreshMediaStatus();
-  syncPlaybackController();
-  notice.value = `Đã gán audio “${reference.label}” cho ${script.name}.`;
-}
-
 async function addAudioForActiveAvatar(layerId?: string): Promise<void> {
   const source = layerId ? layers.value.find((layer) => layer.id === layerId) : activeLayer.value;
   if (!source || !['video', 'audio', 'avatar'].includes(source.kind)) {
@@ -1337,9 +1319,9 @@ function selectVoice(option: string): void {
 
     <div v-if="preparedScriptsOpen" class="studio-dialog-backdrop" @click.self="preparedScriptsOpen = false">
       <section class="studio-dialog prepared-scripts-dialog" role="dialog" aria-modal="true" aria-labelledby="prepared-scripts-title">
-        <header><div><small>VAS</small><h2 id="prepared-scripts-title">Kịch bản avatar & audio</h2></div><button type="button" aria-label="Đóng" @click="preparedScriptsOpen = false"><X /></button></header>
-        <p>Chọn avatar, audio hoặc TTS cho từng R, sau đó bấm <b>Phát</b> tại chính dòng kịch bản.</p>
-        <StudioPlaylistPanel :enabled="persistedScene.preparedScriptSettings.enabled" :snapshot="playlistSnapshot" :scripts="preparedScripts()" :layers="layers" :source-display-name="sourceDisplayName" @toggle="togglePlaylist" @start="playbackStart" @play="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @move="movePreparedScript" @remove="removePreparedScript" @add="addPreparedScript" @pick-audio="pickAudioForPreparedScript" @changed="syncPlaybackController" />
+        <header><div><small>VAS</small><h2 id="prepared-scripts-title">Kịch bản video & audio</h2></div><button type="button" aria-label="Đóng" @click="preparedScriptsOpen = false"><X /></button></header>
+        <p>Chọn video và audio kèm cho từng kịch bản, sau đó bấm <b>Phát</b> tại dòng tương ứng.</p>
+        <StudioPlaylistPanel :enabled="persistedScene.preparedScriptSettings.enabled" :snapshot="playlistSnapshot" :scripts="preparedScripts()" :layers="layers" :source-display-name="sourceDisplayName" @toggle="togglePlaylist" @start="playbackStart" @play="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @move="movePreparedScript" @remove="removePreparedScript" @add="addPreparedScript" @changed="syncPlaybackController" />
       </section>
     </div>
 
