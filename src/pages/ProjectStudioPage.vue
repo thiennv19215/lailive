@@ -1267,7 +1267,7 @@ function selectVoice(option: string): void {
     <div class="studio-left-stack">
       <StudioAssetBrowser :active-tool="activeTool" @add-layer="addLayer" @add-local-image="addLocalImage" @add-local-video="addLocalVideo" @add-local-audio="addLocalAudio" @open-avatar-uploader="avatarLibraryOpen = true" />
 
-      <section class="avatar-state-controls"><strong>Avatar states</strong><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></section>
+      <section class="avatar-state-controls"><strong>Chuyển động avatar</strong><div><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></div></section>
 
       <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" :primary-action="primaryAction" :source-display-name="sourceDisplayName" @add="addLayer()" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @edit-scripts="preparedScriptsOpen = true" />
     </div>

@@ -1044,3 +1044,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - script orchestration board
 
 - Reworked the Timeline into a `Kịch bản` board with three explicit lanes: `Vòng lặp nền`, `Chờ phát ưu tiên`, and `Phản hồi tức thời`. Every script has a visible clip and direct play action, leaving room for future greeting and consultation scripts.
+
+## Session update - compact avatar workspace
+
+- Reduced the Avatar asset area and converted the avatar state picker into a compact horizontal strip, giving the source list and script preparation area substantially more vertical space.
