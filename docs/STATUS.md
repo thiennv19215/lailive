@@ -2,6 +2,31 @@
 
 Updated: 2026-08-01
 
+## Session update - graceful role transitions
+
+- Role actions no longer cut through an active audio/TTS response. `Kích hoạt` or `Nói chuyện` requested during spoken playback are enqueued and only activate after the current media emits its completion event; the timeline shows `Đang đợi phát xong câu hiện tại trước khi chuyển.` while waiting.
+- Idle background media can still switch directly, while new scripts and migrated legacy manual scripts default to `after-current` interruption behavior so normal operator commands remain smooth.
+- Validation passes: 43 focused tests including the no-cut spoken-transition case, focused controller/timeline/schema ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
+## Session update - role-based source scripts
+
+- Prepared script schema v15 adds the explicit `idle`, `activation`, and `conversation` role. Existing v13/v14 scripts migrate as `activation`; legacy manual playlists migrate as `idle` scripts.
+- The footer timeline is now split into three operational lanes. Select a video, audio, or avatar source on the canvas, then use `Gán Chờ`, `Gán Kích hoạt`, or `Gán Đang nói`; the app creates or updates the corresponding script and retains the selected source assignment.
+- `Chạy chờ` runs the idle script. `Kích hoạt` and `Nói chuyện` run their role's first enabled script; a conversation response interrupts idle and the controller resumes the prior idle script after completion. Avatar-only assignment creates a TTS-ready script, while audio/video assignment uses the selected source directly.
+- Validation passes: 42 focused tests, focused Studio/controller/schema ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
+## Session update - unified livestream output controls
+
+- Removed the separate OBS output panel from the footer and merged its status, Browser Source name, connect/camera action, and settings into the fixed livestream control stack on the right.
+- The reclaimed footer width now belongs to the script timeline, keeping playback control and broadcast output in their respective operational areas.
+- Validation passes: focused Studio ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
+## Session update - prepared-script timeline controls
+
+- Moved prepared-script selection and playback into a fixed `Timeline kịch bản` control deck in the Studio footer. Each R appears as a horizontal clip; clicking it plays that script, and the active clip is highlighted.
+- The footer keeps `+ Audio cho avatar` beside the selected avatar name and a `Chỉnh sửa` control for full script configuration. The avatar inspector now only assigns the visual role and directs operators to the footer controls.
+- Validation passes: focused Studio ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
 ## Session update - avatar-to-audio script workflow
 
 - Reworked the selected-avatar inspector around the operator flow: `Phát xem trước video chờ` previews the assigned idle video/GIF, while `+ Thêm audio cho avatar này` opens the native picker, creates an audio source, creates a prepared script, and preassigns that exact avatar to it.
@@ -912,3 +937,11 @@ Continue reducing the template-center mismatch with additional independently sou
 - Added a single-owner prepared-script controller with direct play, sequential play, after-current queueing, stale callback guards, media availability errors, stop/pause/resume/skip behavior, and Scene Runtime active-script publication.
 - Audio and TTS scripts now set the shared avatar state to talking while active and return it to idle on completion, cancellation, errors, or stop. TTS uses the existing typed IPC provider plus renderer playback path.
 - Validation: focused ESLint and `pnpm typecheck` pass. Focused prepared-script, project migration, and scene serialization tests pass. Browser/OBS physical-media verification remains the next manual evidence task.
+
+## Session update - VAS roles and video-attached audio
+
+- The Timeline is now the single operator surface for `Chờ`, `Kích hoạt`, and `Đang nói`; selecting a video, audio, or avatar enables direct role assignment and role playback.
+- Imported audio is visible from Timeline. When a video already has a script, `Nhập audio` attaches the audio to that same video script rather than creating a disconnected script; the edit dialog also exposes an `Audio kèm` selector.
+- Prepared playback schema v16 publishes a dedicated active audio layer. Studio preview and Scene Runtime start/stop the attached audio with its video, retain per-track mute/volume settings, and do not let an audio end event advance the video script.
+- Role transitions queue behind active activation/conversation speech and resume the idle script only after the spoken script ends, avoiding mid-sentence cuts. Only the script-selected avatar is visible at a time.
+- Validation: `pnpm typecheck`, focused ESLint, 46 focused Vitest assertions (including video + attached audio), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check` pass. Browser visual QA could not run because no Browser runtime is available; native Windows file-picker/OBS media evidence remains manual.

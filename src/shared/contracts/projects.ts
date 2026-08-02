@@ -1,4 +1,4 @@
-export const PROJECT_SCHEMA_VERSION = 14 as const;
+export const PROJECT_SCHEMA_VERSION = 16 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -85,6 +85,7 @@ export interface ProjectManualPlaybackSettings {
 }
 
 export type PreparedScriptPlaybackType = 'video' | 'audio' | 'tts';
+export type PreparedScriptRole = 'idle' | 'activation' | 'conversation';
 export type PreparedScriptInterruptMode = 'immediate' | 'after-current';
 export type PreparedScriptCompletionMode = 'stop' | 'next' | 'resume-sequence';
 
@@ -94,7 +95,10 @@ export interface ProjectPreparedScript {
   enabled: boolean;
   order: number;
   playbackType: PreparedScriptPlaybackType;
+  role: PreparedScriptRole;
   mediaLayerId: string | null;
+  // Optional voice track that is started and stopped with a video script.
+  audioLayerId: string | null;
   // The VAS can show one assigned avatar for a script, independently of its audio/video source.
   avatarLayerId: string | null;
   speechText: string;

@@ -132,7 +132,9 @@ export const projectPreparedScriptSchema = z.object({
   enabled: z.boolean(),
   order: z.number().int().min(0).max(19),
   playbackType: z.enum(['video', 'audio', 'tts']),
+  role: z.enum(['idle', 'activation', 'conversation']),
   mediaLayerId: projectIdSchema.nullable(),
+  audioLayerId: projectIdSchema.nullable(),
   avatarLayerId: projectIdSchema.nullable(),
   speechText: z.string().trim().max(5_000),
   interruptMode: z.enum(['immediate', 'after-current']),
@@ -146,6 +148,9 @@ export const projectPreparedScriptSchema = z.object({
   }
   if (script.playbackType === 'tts' && script.mediaLayerId !== null) {
     context.addIssue({ code: 'custom', path: ['mediaLayerId'], message: 'TTS scripts cannot reference a media layer.' });
+  }
+  if (script.playbackType !== 'video' && script.audioLayerId !== null) {
+    context.addIssue({ code: 'custom', path: ['audioLayerId'], message: 'Only video scripts can have an attached audio track.' });
   }
 });
 export const projectPreparedScriptSettingsSchema = z.object({
@@ -183,6 +188,9 @@ export const projectSceneSchema = z.object({
   scene.preparedScriptSettings.scripts.forEach((script, index) => {
     if (script.avatarLayerId && !scene.layers.some((layer) => layer.id === script.avatarLayerId && layer.kind === 'avatar')) {
       context.addIssue({ code: 'custom', path: ['preparedScriptSettings', 'scripts', index, 'avatarLayerId'], message: 'Script avatar must reference an avatar layer.' });
+    }
+    if (script.audioLayerId && !scene.layers.some((layer) => layer.id === script.audioLayerId && layer.kind === 'audio')) {
+      context.addIssue({ code: 'custom', path: ['preparedScriptSettings', 'scripts', index, 'audioLayerId'], message: 'Attached audio must reference an audio layer.' });
     }
   });
 });
@@ -249,20 +257,21 @@ function migratePreparedScriptSettings(
   if (current.success && (current.data.scripts.length > 0 || manualPlayback.playlist.length === 0)) {
     return { ...current.data, scripts: [...current.data.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
   }
-  // Schema v13 did not have an avatar assignment. Preserve its scripts while
-  // making the new VAS selection explicit and safely unassigned.
+  // Schema v13/v14 did not have a behavior role. Preserve its scripts while
+  // making the new activation behavior explicit and safely unassigned.
   const legacy = z.object({
     enabled: z.boolean(),
     scripts: z.array(z.object({
       id: projectIdSchema, name: z.string().trim().min(1).max(120), enabled: z.boolean(), order: z.number().int().min(0).max(19),
-      playbackType: z.enum(['video', 'audio', 'tts']), mediaLayerId: projectIdSchema.nullable(), speechText: z.string().trim().max(5_000),
+      playbackType: z.enum(['video', 'audio', 'tts']), mediaLayerId: projectIdSchema.nullable(), avatarLayerId: projectIdSchema.nullable().optional(), speechText: z.string().trim().max(5_000),
+      role: z.enum(['idle', 'activation', 'conversation']).optional(), audioLayerId: projectIdSchema.nullable().optional(),
       interruptMode: z.enum(['immediate', 'after-current']), completionMode: z.enum(['stop', 'next', 'resume-sequence']),
     })).max(20),
   }).safeParse(value);
   if (legacy.success && (legacy.data.scripts.length > 0 || manualPlayback.playlist.length === 0)) {
     return projectPreparedScriptSettingsSchema.parse({
       ...legacy.data,
-      scripts: legacy.data.scripts.map((script) => ({ ...script, avatarLayerId: null })),
+      scripts: legacy.data.scripts.map((script) => ({ ...script, avatarLayerId: script.avatarLayerId ?? null, audioLayerId: script.audioLayerId ?? null, role: script.role ?? 'activation' })),
     });
   }
   const scripts = manualPlayback.playlist.flatMap((item, order) => {
@@ -274,10 +283,12 @@ function migratePreparedScriptSettings(
       enabled: item.enabled,
       order,
       playbackType: layer.kind,
+      role: 'idle' as const,
       mediaLayerId: layer.id,
+      audioLayerId: null,
       avatarLayerId: null,
       speechText: '',
-      interruptMode: 'immediate' as const,
+      interruptMode: 'after-current' as const,
       completionMode: 'next' as const,
     }];
   });

@@ -89,13 +89,13 @@ function layerBox(layer, imageIndex) {
 function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
-  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
   const managed = presentation.managedLayerIds.includes(layer.id);
   // A script-selected avatar owns its visibility; legacy idle/talking pairs keep their role behavior.
   const speechVisible = layer.kind !== 'avatar' || managed || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
   const presentationVisible = !managed || (layer.kind === 'avatar'
     ? presentation.activeAvatarLayerId === layer.id
-    : presentation.activeLayerId === layer.id);
+    : presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
   const renderedKind = mediaKind(layer, state.scene);
   root.dataset.mediaKind = renderedKind;
   root.dataset.avatarState = layer.kind === 'avatar' ? layer.avatarState : '';
@@ -120,10 +120,10 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
       media.style.objectFit = layer.fitMode;
       media.style.borderRadius = layer.kind === 'image' ? `${state.scene.imageSettings.radius}px` : '0';
       if (media instanceof HTMLMediaElement) {
-        const active = managed && presentation.activeLayerId === layer.id;
-        media.loop = managed ? (active ? presentation.activeLoop : false) : layer.loop;
-        media.muted = active ? presentation.activeMuted : layer.muted;
-        media.volume = active ? presentation.activeVolume : layer.volume;
+        const active = managed && (presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
+        media.loop = managed ? (active ? (presentation.activeAudioLayerId === layer.id ? false : presentation.activeLoop) : false) : layer.loop;
+        media.muted = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioMuted : presentation.activeMuted) : layer.muted;
+        media.volume = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioVolume : presentation.activeVolume) : layer.volume;
         const revision = String(presentation.playbackRevision);
         const speechManaged = layer.kind === 'avatar' && layer.avatarState !== 'none';
         if (speechManaged && !speechVisible) {

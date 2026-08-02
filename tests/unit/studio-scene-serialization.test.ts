@@ -31,6 +31,7 @@ function preparePlainPresentation(
     mode,
     activeScriptId: null,
     activeLayerId: activeLayerId ? String(activeLayerId) : null,
+    activeAudioLayerId: null,
     activeAvatarLayerId: null,
     managedLayerIds: enabled ? playlistLayerIds.map((id) => String(id)) : [],
     playbackRevision: Number(playbackRevision),
@@ -38,6 +39,8 @@ function preparePlainPresentation(
     activeMuted: false,
     activeVolume: 1,
     activeLoop: false,
+    activeAudioMuted: true,
+    activeAudioVolume: 0,
   };
 }
 
