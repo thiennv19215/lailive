@@ -27,6 +27,18 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     // Repair it before autosave so the project becomes valid without losing media.
     scripts().forEach((script) => {
       if (script.avatarLayerId && !avatarLayerIds.has(script.avatarLayerId)) script.avatarLayerId = null;
+      // Older UI versions stored a standalone audio clip only as an attached
+      // track on an otherwise empty video script. Promote it to a playable clip.
+      if (script.playbackType === 'video' && script.mediaLayerId === null && script.audioLayerId) {
+        script.playbackType = 'audio';
+        script.mediaLayerId = script.audioLayerId;
+        script.audioLayerId = null;
+      }
+      if (script.playbackType === 'audio' && script.audioLayerId) {
+        // Audio cannot be both the primary source and a video-only attached track.
+        if (script.mediaLayerId === null) script.mediaLayerId = script.audioLayerId;
+        script.audioLayerId = null;
+      }
     });
     controller.configure(options.scene.value.preparedScriptSettings, options.layers.value
       .filter((layer) => layer.kind === 'video' || layer.kind === 'audio' || layer.kind === 'avatar')
@@ -37,7 +49,7 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     const layer = script?.mediaLayerId ? options.layers.value.find((candidate) => candidate.id === script.mediaLayerId) : undefined;
     const audio = script?.audioLayerId ? options.layers.value.find((candidate) => candidate.id === script.audioLayerId) : undefined;
     const motion = options.avatarVideo.value;
-    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, transitionLayerId: current.transitionLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), resumeActiveMedia: current.resumeActiveMedia, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: false, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
+    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, transitionLayerId: current.transitionLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), resumeActiveMedia: current.resumeActiveMedia, activePaused: current.mode !== 'playing', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: false, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
   }
   function publish(): Promise<void> {
     if (!options.projectLoaded.value) return Promise.resolve();

@@ -3,13 +3,20 @@ import type { PreparedScriptPlaybackSnapshot } from '../../modules/playback/prep
 import type { ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
 
 const props = defineProps<{ enabled: boolean; snapshot: PreparedScriptPlaybackSnapshot; scripts: ProjectPreparedScript[]; layers: ProjectSceneLayer[]; sourceDisplayName: (layer: ProjectSceneLayer) => string; }>();
-const emit = defineEmits<{ play: [scriptId: string]; start: []; pause: []; resume: []; skip: []; stop: []; toggle: []; move: [index: number, delta: number]; remove: [index: number]; changed: []; add: [type: 'video', layerId: string]; }>();
+const emit = defineEmits<{ play: [scriptId: string]; start: []; pause: []; resume: []; skip: []; stop: []; toggle: []; move: [index: number, delta: number]; remove: [index: number]; changed: []; add: [type: 'video' | 'audio', layerId: string]; }>();
 
-const videoLayers = () => props.layers.filter((layer) => layer.kind === 'video');
 const audioLayers = () => props.layers.filter((layer) => layer.kind === 'audio');
+type PlayableLayer = ProjectSceneLayer & { kind: 'video' | 'audio' };
+function isPlayableLayer(layer: ProjectSceneLayer): layer is PlayableLayer {
+  return layer.kind === 'video' || layer.kind === 'audio';
+}
+const playableLayers = (): PlayableLayer[] => props.layers.filter(isPlayableLayer);
 
-function chooseVideo(script: ProjectPreparedScript): void {
-  script.playbackType = 'video';
+function chooseMedia(script: ProjectPreparedScript): void {
+  const layer = playableLayers().find((candidate) => candidate.id === script.mediaLayerId);
+  if (!layer) return;
+  script.playbackType = layer.kind;
+  if (layer.kind === 'audio') script.audioLayerId = null;
   script.speechText = '';
   emit('changed');
 }
@@ -49,11 +56,11 @@ function chooseVideo(script: ProjectPreparedScript): void {
         </div>
         <div class="prepared-script-fields">
           <label>Luồng phát<select v-model="script.role" @change="emit('changed')"><option value="idle">Vòng lặp nền</option><option value="activation">Chờ phát ưu tiên</option><option value="conversation">Phản hồi tức thời</option></select></label>
-          <label>Video<select v-model="script.mediaLayerId" @change="chooseVideo(script)"><option :value="null">Chọn video</option><option v-for="layer in videoLayers()" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
-          <label>Audio kèm<select v-model="script.audioLayerId" @change="emit('changed')"><option :value="null">Không có audio kèm</option><option v-for="layer in audioLayers()" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
+          <label>Nguon phat<select v-model="script.mediaLayerId" @change="chooseMedia(script)"><option :value="null">Chon video hoac audio</option><option v-for="layer in playableLayers()" :key="layer.id" :value="layer.id">{{ layer.kind === 'audio' ? 'Audio - ' : 'Video - ' }}{{ sourceDisplayName(layer) }}</option></select></label>
+          <label>Audio kèm<select v-model="script.audioLayerId" :disabled="script.playbackType !== 'video'" @change="emit('changed')"><option :value="null">Không có audio kèm</option><option v-for="layer in audioLayers()" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
         </div>
       </li>
     </ol>
-    <div class="playlist-add-list"><button v-for="layer in videoLayers()" :key="layer.id" type="button" @click="emit('add', 'video', layer.id)">+ {{ sourceDisplayName(layer) }}</button><small v-if="!videoLayers().length">Thêm video từ Nguồn + để tạo kịch bản.</small></div>
+    <div class="playlist-add-list"><button v-for="layer in playableLayers()" :key="layer.id" type="button" @click="emit('add', layer.kind, layer.id)">+ {{ sourceDisplayName(layer) }}</button><small v-if="!playableLayers().length">Them video hoac audio tu Nguon + de tao kich ban.</small></div>
   </section>
 </template>

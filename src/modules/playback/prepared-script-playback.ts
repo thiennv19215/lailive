@@ -37,6 +37,23 @@ export class PreparedScriptPlaybackController {
   configure(settings: ProjectPreparedScriptSettings, layers: readonly PlayableLayer[]): void {
     this.settings = { enabled: settings.enabled, scripts: [...settings.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
     this.layers = new Map(layers.map((layer) => [layer.id, { ...layer }]));
+    const active = this.snapshotValue.activeScriptId ? this.script(this.snapshotValue.activeScriptId) : undefined;
+    if (!active) return;
+    const activeLayerId = active.playbackType === 'tts' ? null : active.mediaLayerId;
+    const activeAudioLayerId = active.playbackType === 'video' ? active.audioLayerId : null;
+    if (this.snapshotValue.activeLayerId === activeLayerId && this.snapshotValue.activeAudioLayerId === activeAudioLayerId) return;
+    // A source edit can change an active video script into an audio script.
+    // Rebind the presentation atomically so stale media cannot remain muted.
+    this.snapshotValue = {
+      ...this.snapshotValue,
+      mode: 'loading',
+      activeLayerId,
+      activeAudioLayerId,
+      transitionLayerId: null,
+      resumeActiveMedia: false,
+      playbackRevision: this.snapshotValue.playbackRevision + 1,
+    };
+    this.emit();
   }
 
   subscribe(listener: Listener): () => void {

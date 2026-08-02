@@ -41,6 +41,9 @@ const captureMode = process.argv.includes('--ui-capture');
 const sceneRuntimeSmokeMode = process.argv.includes('--scene-runtime-smoke');
 
 app.setName('AI Livestream');
+// Studio playback is operator initiated, but media is mounted asynchronously
+// after a native picker closes. Keep local audio from being rejected as autoplay.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if ((smokeMode || closeSmokeMode || auxiliarySmokeMode || captureMode) && process.env.AI_LIVESTREAM_SMOKE_DATA_DIR) {
   app.setPath('userData', process.env.AI_LIVESTREAM_SMOKE_DATA_DIR);
 }

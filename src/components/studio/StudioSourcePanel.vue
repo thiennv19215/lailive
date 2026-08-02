@@ -2,7 +2,7 @@
 /* global HTMLElement, MouseEvent, Node, document */
 import { AudioLines, Clapperboard, Image, Plus, Sticker, Type, UserRound, X } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { PreparedScriptRole, ProjectMediaKind, ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
+import type { AvatarVideoState, PreparedScriptRole, ProjectMediaKind, ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
 
 const props = defineProps<{
   layers: ProjectSceneLayer[];
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   addBuiltin: [label: string];
   remove: [index: number];
   select: [index: number];
+  setAvatarMotion: [layerId: string, state: AvatarVideoState | null];
   assign: [layerId: string, role: PreparedScriptRole];
   addAudio: [layerId: string];
   convertVideoToGif: [layerId: string];
@@ -32,6 +33,7 @@ const activeCanScript = computed(() => Boolean(activeLayer.value && ['avatar', '
 const activeScript = computed(() => activeLayer.value
   ? props.scripts.find((script) => script.mediaLayerId === activeLayer.value?.id || script.audioLayerId === activeLayer.value?.id || script.avatarLayerId === activeLayer.value?.id)
   : undefined);
+const avatarMotionStates: AvatarVideoState[] = ['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'];
 
 function roleLabel(role: PreparedScriptRole): string {
   return role === 'idle' ? 'Vòng lặp nền' : role === 'activation' ? 'Chờ phát ưu tiên' : 'Phản hồi tức thời';
@@ -74,6 +76,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeImportMen
       <header><strong>Đưa vào Timeline</strong><button type="button" @click="emit('editScripts')">Chi tiết</button></header>
       <template v-if="activeCanScript && activeLayer">
         <p><b>{{ sourceDisplayName(activeLayer) }}</b><span v-if="activeScript"> · {{ roleLabel(activeScript.role) }}</span></p>
+        <label v-if="activeLayer.kind === 'avatar'" class="avatar-motion-assignment">Avatar state<select :value="activeLayer.avatarMotion ?? ''" :aria-label="`Avatar state ${activeLayer.name}`" @change="emit('setAvatarMotion', activeLayer.id, (($event.target as HTMLSelectElement).value || null) as AvatarVideoState | null)"><option value="">Regular avatar</option><option v-for="state in avatarMotionStates" :key="state" :value="state">{{ state }}</option></select><small>All motion states share one position and size.</small></label>
         <div class="source-script-actions">
           <button type="button" :class="{ active: activeScript?.role === 'idle' }" @click="emit('assign', activeLayer.id, 'idle')">+ Hàng tự chạy</button>
           <button type="button" :class="{ active: activeScript?.role === 'activation' }" @click="emit('assign', activeLayer.id, 'activation')">+ Chờ phát ưu tiên</button>

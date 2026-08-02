@@ -1102,6 +1102,36 @@ Continue reducing the template-center mismatch with additional independently sou
 
 ## Session update - immediate imported-media persistence
 
+## Session update - primary audio scripts
+
+- The script editor now exposes Audio as a primary playable source, not only as a track attached to a video.
+- Existing audio scripts no longer display an empty source selector; selecting an audio source updates the script playback type before Play starts it.
+- Empty legacy video scripts with an attached audio track are repaired to primary audio scripts during playback synchronization.
+- An audio-primary script now clears its video-only attached-audio field before autosave; the attached-audio selector is disabled unless its primary source is a video.
+- Root cause verified against the live Scene Runtime: a script source update changed the script data but left the playback controller's active snapshot pointing at the former avatar/video. The stale presentation muted the actual audio at volume 0. Controller reconfiguration now rebinds active source IDs and advances the playback revision atomically.
+- Corrected the audio workflow: importing audio only adds a source; attaching it to a video or video-avatar makes it that video's `audioLayerId`. The attached track waits for its primary video to become ready, then starts with it and stops when the video script changes.
+- Validation: `pnpm typecheck`, focused Studio ESLint, 15 prepared-playback unit tests, and `git diff --check` pass.
+
+## Session update - local audio playback
+
+- Imported audio is now added to the automatic playback lane immediately, so it has an active playback owner instead of remaining silent as a canvas-only source.
+- Attached audio now publishes and persists before the script dialog opens. Electron also permits the operator-triggered media flow after the native file picker closes, preventing Chromium autoplay rejection.
+
+## Session update - synchronized waiting-scene transitions
+
+- Studio now keeps the outgoing Timeline layer visible while its successor prepares, matching the Browser Source transition state instead of hiding the old scene immediately.
+- Timeline readiness for video now waits for a decoded compositor frame (`requestVideoFrameCallback`) rather than the earlier `playing` signal.
+- Browser Source independently retains its outgoing Timeline frame until its own decoder has a frame for the incoming clip, preventing Studio and OBS from switching at different moments.
+- Validation passes: `pnpm typecheck`, focused changed-file ESLint, unit suite (31 files, 172 tests), and `git diff --check`.
+- Rendered Browser QA remains blocked: the first local navigation hit `ERR_CONNECTION_REFUSED` while Vite was starting, and the retry timed out in the in-app browser CDP connection.
+
+## Session update - shared avatar motion frame
+
+- Avatar motion files are now treated as states of one presenter. All assigned motion states share the same transform, so moving, resizing, rotating, or nudging any state updates every other state immediately.
+- The first assigned motion state establishes the frame; subsequent states inherit it automatically. A new `Avatar state` selector on the selected avatar assigns `idle`, `talk`, and gesture files without allowing duplicate state ownership.
+- The shared transform is normalized on project load and persisted to the scene, so Studio and Browser Source receive the same avatar frame.
+- Validation passes: `pnpm typecheck`, focused ESLint, dedicated avatar-motion and avatar-state tests (4/4), and `git diff --check`. In-app Browser visual QA is still blocked by a CDP `Runtime.evaluate` timeout against the local Studio route.
+
 ## Session update - quick text and sticker sources
 
 ## Session update - safe sticker placement

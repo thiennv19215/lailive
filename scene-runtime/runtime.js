@@ -11,6 +11,9 @@ let lastChromaFrameAt = 0;
 // The Browser Source decoder can lag Studio. Retain its outgoing avatar until
 // this renderer has independently decoded a frame for the incoming one.
 let heldAvatarLayerId = null;
+// The Studio preview acknowledges a new clip first. Keep the old clip locally
+// when this Browser Source decoder has not yet painted the successor.
+let heldTransitionLayerId = null;
 
 function report(level, message) {
   void fetch('/log', {
@@ -69,6 +72,20 @@ function hasDecodedAvatarFrame(presentation) {
 function syncAvatarFrameHold(presentation) {
   if (presentation?.activeAvatarTransitionLayerId) heldAvatarLayerId = presentation.activeAvatarTransitionLayerId;
   if (heldAvatarLayerId && hasDecodedAvatarFrame(presentation)) heldAvatarLayerId = null;
+}
+
+function hasDecodedActiveTransitionFrame(presentation) {
+  if (!presentation?.activeLayerId) return true;
+  const node = layerNodes.get(presentation.activeLayerId);
+  const media = node?.querySelector('[data-media="source"]');
+  // Images are decoded by their load event before becoming visible. Audio has
+  // no visual frame, so it must not keep the preceding video on screen.
+  return !(media instanceof HTMLVideoElement) || media.dataset.frameReady === 'true';
+}
+
+function syncTransitionFrameHold(presentation) {
+  if (presentation?.transitionLayerId) heldTransitionLayerId = presentation.transitionLayerId;
+  if (heldTransitionLayerId && hasDecodedActiveTransitionFrame(presentation)) heldTransitionLayerId = null;
 }
 
 function isStickerLayer(layer) {
@@ -143,7 +160,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
   const motionManaged = layer.kind === 'avatar' && Boolean(layer.avatarMotion) && presentation.activeLayerId !== layer.id;
   const presentationVisible = motionManaged
     ? presentation.activeAvatarLayerId === layer.id || presentation.activeAvatarTransitionLayerId === layer.id || presentation.pendingAvatarLayerId === layer.id || (heldAvatarLayerId === layer.id && !hasDecodedAvatarFrame(presentation))
-    : !managed || !presentation.activeScriptId || layer.id === presentation.transitionLayerId || (layer.kind === 'avatar'
+    : !managed || !presentation.activeScriptId || layer.id === presentation.transitionLayerId || (heldTransitionLayerId === layer.id && !hasDecodedActiveTransitionFrame(presentation)) || (layer.kind === 'avatar'
     ? !presentation.activeAvatarLayerId || presentation.activeAvatarLayerId === layer.id
     : presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
   const renderedKind = mediaKind(layer, state.scene);
@@ -297,6 +314,7 @@ function refreshChroma() {
 function render(state) {
   currentState = state;
   syncAvatarFrameHold(state.presentation);
+  syncTransitionFrameHold(state.presentation);
   const ratio = state.scene.width / state.scene.height;
   Object.assign(sceneElement.style, {
     aspectRatio: `${state.scene.width} / ${state.scene.height}`,

@@ -40,6 +40,8 @@ let animationFrame: number | null = null;
 let lastVideoFrameAt = 0;
 let appliedPlaybackRevision = -1;
 let reportedReadyRevision = -1;
+let playbackFrameRequest: number | null = null;
+let playbackFrameRevision = -1;
 let previousSpeechActive = false;
 let motionFrameRequest: number | null = null;
 let motionFrameReady = false;
@@ -48,6 +50,24 @@ function reportPlaybackReady(): void {
   const media = videoElement.value ?? audioElement.value;
   const revision = props.playbackRevision ?? 0;
   if (!props.playbackManaged || !props.playbackActive || !media || media.readyState === 0 || media.paused || reportedReadyRevision === revision) return;
+  if (media instanceof HTMLVideoElement && typeof media.requestVideoFrameCallback === 'function') {
+    if (playbackFrameRequest !== null && playbackFrameRevision !== revision) {
+      media.cancelVideoFrameCallback(playbackFrameRequest);
+      playbackFrameRequest = null;
+    }
+    if (playbackFrameRequest !== null) return;
+    // `playing` can precede composition by a frame. A decoded frame is the
+    // common handoff point used by Studio and the Browser Source.
+    playbackFrameRequest = media.requestVideoFrameCallback(() => {
+      playbackFrameRequest = null;
+      playbackFrameRevision = -1;
+      if (!props.playbackManaged || !props.playbackActive || (props.playbackRevision ?? 0) !== revision || media.paused || reportedReadyRevision === revision) return;
+      reportedReadyRevision = revision;
+      emit('ready', props.layer.id, revision);
+    });
+    playbackFrameRevision = revision;
+    return;
+  }
   reportedReadyRevision = revision;
   emit('ready', props.layer.id, revision);
 }
@@ -103,6 +123,9 @@ function syncMediaPlayback(): void {
   }
   media.loop = false;
   if (!props.playbackActive || props.playbackPaused) {
+    if (playbackFrameRequest !== null && videoElement.value) videoElement.value.cancelVideoFrameCallback(playbackFrameRequest);
+    playbackFrameRequest = null;
+    playbackFrameRevision = -1;
     media.pause();
     return;
   }
@@ -207,6 +230,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   cancelRenderLoop();
+  if (playbackFrameRequest !== null && videoElement.value) videoElement.value.cancelVideoFrameCallback(playbackFrameRequest);
+  playbackFrameRevision = -1;
   if (motionFrameRequest !== null && videoElement.value) videoElement.value.cancelVideoFrameCallback(motionFrameRequest);
   resizeObserver?.disconnect();
 });

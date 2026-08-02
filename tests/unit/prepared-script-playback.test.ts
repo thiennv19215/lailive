@@ -193,4 +193,25 @@ describe('prepared script playback controller', () => {
     expect(controller.onEnded('r1', revision)).toBe(true);
     expect(controller.snapshot().activeAudioLayerId).toBeNull();
   });
+
+  it('rebinds an active script when its source changes from video to audio', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({
+      ...settings,
+      scripts: settings.scripts.map((script) => script.id === 'r1' ? { ...script, audioLayerId: 'audio-r2' } : script),
+    }, layers);
+    controller.playScript('r1');
+    const previousRevision = controller.snapshot().playbackRevision;
+
+    controller.configure({
+      ...settings,
+      scripts: settings.scripts.map((script) => script.id === 'r1'
+        ? { ...script, playbackType: 'audio', mediaLayerId: 'audio-r2', audioLayerId: null }
+        : script),
+    }, layers);
+
+    expect(controller.snapshot()).toMatchObject({
+      mode: 'loading', activeLayerId: 'audio-r2', activeAudioLayerId: null, playbackRevision: previousRevision + 1,
+    });
+  });
 });
