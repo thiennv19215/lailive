@@ -8,6 +8,8 @@ export interface PreparedScriptPlaybackSnapshot {
   activeLayerId: string | null;
   activeAudioLayerId: string | null;
   activeAvatarLayerId: string | null;
+  // Keeps the completed waiting clip visible until its successor has a frame.
+  transitionLayerId: string | null;
   playbackRevision: number;
   // A resumed waiting video keeps its existing media element and currentTime.
   resumeActiveMedia: boolean;
@@ -30,7 +32,7 @@ export class PreparedScriptPlaybackController {
   private sequenceActive = false;
   private suspendedIdleScriptId: string | null = null;
   private resumeIdleAfterOrder: number | null = null;
-  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null };
+  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, playbackRevision: 0, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null };
 
   configure(settings: ProjectPreparedScriptSettings, layers: readonly PlayableLayer[]): void {
     this.settings = { enabled: settings.enabled, scripts: [...settings.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
@@ -98,7 +100,7 @@ export class PreparedScriptPlaybackController {
     this.sequenceActive = false;
     this.suspendedIdleScriptId = null;
     this.resumeIdleAfterOrder = null;
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
     if (changed) this.emit();
     return changed;
   }
@@ -121,7 +123,8 @@ export class PreparedScriptPlaybackController {
 
   onReady(scriptId: string, revision: number): boolean {
     if (!this.matches(scriptId, revision) || this.snapshotValue.mode === 'paused') return false;
-    this.snapshotValue.mode = 'playing'; this.emit(); return true;
+    if (this.snapshotValue.mode !== 'playing') { this.snapshotValue.mode = 'playing'; this.snapshotValue.transitionLayerId = null; this.emit(); }
+    return true;
   }
   onEnded(scriptId: string, revision: number): boolean { return this.matches(scriptId, revision) && this.snapshotValue.mode !== 'paused' ? this.completeActive() : false; }
   onError(scriptId: string, revision: number, reason: string): boolean {
@@ -152,7 +155,7 @@ export class PreparedScriptPlaybackController {
     }
     if (active.role === 'idle' && this.sequenceActive) return this.activateNext(active.order + 1, 'idle');
     if (active.completionMode === 'next') return this.activateNext(active.order + 1, active.role);
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, resumeActiveMedia: false, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private activateNext(start: number, role?: PreparedScriptRole): boolean {
@@ -184,7 +187,11 @@ export class PreparedScriptPlaybackController {
       const avatar = this.layers.get(script.avatarLayerId);
       if (!avatar || !avatar.available || avatar.kind !== 'avatar') return this.fail(`Avatar for ${script.name} is unavailable.`);
     }
-    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, activeAudioLayerId: script.audioLayerId, activeAvatarLayerId: script.avatarLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    const previous = this.snapshotValue.activeScriptId ? this.script(this.snapshotValue.activeScriptId) : undefined;
+    const transitionLayerId = script.role === 'idle' && previous?.role === 'idle' && this.snapshotValue.activeLayerId !== script.mediaLayerId
+      ? this.snapshotValue.activeLayerId
+      : null;
+    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, activeAudioLayerId: script.audioLayerId, activeAvatarLayerId: script.avatarLayerId, transitionLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private enqueue(scriptId: string, allowDuplicates = false): true {
@@ -195,6 +202,6 @@ export class PreparedScriptPlaybackController {
   private script(id: string): ProjectPreparedScript | undefined { return this.settings.scripts.find((script) => script.id === id); }
   private scriptIndex(id: string): number { return this.settings.scripts.findIndex((script) => script.id === id); }
   private matches(scriptId: string, revision: number): boolean { return !this.disposed && this.snapshotValue.activeScriptId === scriptId && this.snapshotValue.playbackRevision === revision; }
-  private fail(message: string): false { this.suspendedIdleScriptId = null; this.resumeIdleAfterOrder = null; this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: message }; this.emit(); return false; }
+  private fail(message: string): false { this.suspendedIdleScriptId = null; this.resumeIdleAfterOrder = null; this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, resumeActiveMedia: false, errorMessage: message }; this.emit(); return false; }
   private emit(): void { if (!this.disposed) for (const listener of this.listeners) listener(this.snapshot()); }
 }

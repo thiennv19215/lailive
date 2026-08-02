@@ -35,6 +35,7 @@ function preparePlainPresentation(
     activeAvatarLayerId: null,
     activeAvatarTransitionLayerId: null,
     pendingAvatarLayerId: null,
+    transitionLayerId: null,
     managedLayerIds: enabled ? playlistLayerIds.map((id) => String(id)) : [],
     playbackRevision: Number(playbackRevision),
     resumeActiveMedia: false,

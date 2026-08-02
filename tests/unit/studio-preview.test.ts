@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createProjectSceneLayer } from '../../src/shared/contracts/projects';
-import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, previewLayerBox, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
+import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, isStickerLayer, previewLayerBox, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
 
 describe('Studio preview source and geometry', () => {
   it('does not render implicit name-based or empty sources', () => {
@@ -49,11 +49,26 @@ describe('Studio preview source and geometry', () => {
     expect(previewLayerStyle(background, 5, 4)).toMatchObject({ left: '0%', top: '0%', width: '100%', height: '100%' });
   });
 
+  it('adds built-in stickers as a compact overlay instead of a full-canvas image', () => {
+    const sticker = createProjectSceneLayer('sticker', 'HOT DEAL', 'image', { type: 'builtin', assetId: 'sticker-hot-deal', mediaReferenceId: null });
+
+    expect(isStickerLayer(sticker)).toBe(true);
+    expect(previewLayerBox(sticker)).toEqual({ left: 4, top: 3, width: 32, height: 12 });
+    expect(previewLayerStyle(sticker, 0)).toMatchObject({ left: '4%', top: '3%', width: '32%', height: '12%' });
+  });
+
   it('renders lower array indexes above later layers', () => {
     const front = createProjectSceneLayer('front', 'Front', 'image', { type: 'builtin', assetId: 'beauty-model', mediaReferenceId: null });
     const back = createProjectSceneLayer('back', 'Back', 'image', { type: 'builtin', assetId: 'beauty-studio', mediaReferenceId: null });
 
     expect(Number(previewLayerStyle(front, 0).zIndex)).toBeGreaterThan(Number(previewLayerStyle(back, 1).zIndex));
+  });
+
+  it('uses source-list order for avatars too, so layouts can be placed in front', () => {
+    const layout = createProjectSceneLayer('layout', 'HOT DEAL', 'image', { type: 'builtin', assetId: 'sticker-hot-deal', mediaReferenceId: null });
+    const avatar = createProjectSceneLayer('avatar', 'Host', 'avatar', { type: 'builtin', assetId: 'template-host', mediaReferenceId: null });
+
+    expect(Number(previewLayerStyle(layout, 0).zIndex)).toBeGreaterThan(Number(previewLayerStyle(avatar, 1).zIndex));
   });
 
   it('gives text layers the same authored box, transform and z-order rules as media layers', () => {

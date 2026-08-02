@@ -171,7 +171,7 @@ describe('SceneRuntimeService', () => {
     const scene = createEmptyScene();
     service.publish(scene, 'idle', {
       mode: 'playing', activeScriptId: 'script-1', activeLayerId: 'video-1', activeAudioLayerId: null,
-      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null,
+      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, transitionLayerId: null,
       managedLayerIds: ['video-1'], playbackRevision: 7, resumeActiveMedia: false, activePaused: false,
       activeMuted: false, activeVolume: 1, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0,
     });

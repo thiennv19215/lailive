@@ -8,6 +8,9 @@ let lastServerRevision = 0;
 let lastPlaybackRevision = -1;
 let chromaFrame = null;
 let lastChromaFrameAt = 0;
+// The Browser Source decoder can lag Studio. Retain its outgoing avatar until
+// this renderer has independently decoded a frame for the incoming one.
+let heldAvatarLayerId = null;
 
 function report(level, message) {
   void fetch('/log', {
@@ -56,6 +59,24 @@ function isDefaultBackgroundLayer(layer) {
     && ['beauty-studio', 'beauty-cream', 'background-white-clean', 'background-white-warm', 'background-white-studio'].includes(layer.source.assetId);
 }
 
+function hasDecodedAvatarFrame(presentation) {
+  if (!presentation?.activeAvatarLayerId) return false;
+  const node = layerNodes.get(presentation.activeAvatarLayerId);
+  const media = node?.querySelector('[data-media="source"]');
+  return media instanceof HTMLVideoElement && media.dataset.frameReady === 'true';
+}
+
+function syncAvatarFrameHold(presentation) {
+  if (presentation?.activeAvatarTransitionLayerId) heldAvatarLayerId = presentation.activeAvatarTransitionLayerId;
+  if (heldAvatarLayerId && hasDecodedAvatarFrame(presentation)) heldAvatarLayerId = null;
+}
+
+function isStickerLayer(layer) {
+  return layer.kind === 'image'
+    && layer.source.type === 'builtin'
+    && ['sticker-freeship', 'sticker-hot-deal', 'sticker-live-only', 'sticker-sale-50'].includes(layer.source.assetId);
+}
+
 function createLayerNode(layer, state) {
   const root = document.createElement(layer.kind === 'text' ? 'div' : 'section');
   root.className = layer.kind === 'text' ? 'runtime-layer runtime-text' : 'runtime-layer runtime-media';
@@ -80,7 +101,15 @@ function createLayerNode(layer, state) {
         }).catch(() => undefined);
       });
     }
-    media.addEventListener(media instanceof HTMLMediaElement ? 'loadeddata' : 'load', () => renderLayerChroma(layer.id));
+    media.addEventListener(media instanceof HTMLMediaElement ? 'loadeddata' : 'load', () => {
+      if (media instanceof HTMLVideoElement) {
+        media.requestVideoFrameCallback(() => {
+          media.dataset.frameReady = 'true';
+          if (currentState) render(currentState);
+        });
+      }
+      renderLayerChroma(layer.id);
+    });
     root.append(media);
     if (renderedKind !== 'audio') {
       const canvas = document.createElement('canvas');
@@ -94,6 +123,7 @@ function createLayerNode(layer, state) {
 function layerBox(layer, imageIndex) {
   if (layer.kind === 'audio') return { left: 0, top: 0, width: 0.1, height: 0.1 };
   if (isDefaultBackgroundLayer(layer)) return { left: 0, top: 0, width: 100, height: 100 };
+  if (isStickerLayer(layer)) return { left: 4, top: 3, width: 32, height: 12 };
   if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
   if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
   if (layer.kind === 'avatar') return { left: 42, top: 25, width: 54, height: 72 };
@@ -104,24 +134,31 @@ function layerBox(layer, imageIndex) {
 function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
-  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, transitionLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
   const managed = presentation.managedLayerIds.includes(layer.id);
   // A script-selected avatar owns its visibility; legacy idle/talking pairs keep their role behavior.
   const speechVisible = layer.kind !== 'avatar' || managed || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
-  const motionManaged = layer.kind === 'avatar' && Boolean(layer.avatarMotion);
+  // A video avatar assigned directly to a Timeline script is ordinary media;
+  // only state-driven avatars are controlled by the avatar motion manager.
+  const motionManaged = layer.kind === 'avatar' && Boolean(layer.avatarMotion) && presentation.activeLayerId !== layer.id;
   const presentationVisible = motionManaged
-    ? presentation.activeAvatarLayerId === layer.id || presentation.activeAvatarTransitionLayerId === layer.id || presentation.pendingAvatarLayerId === layer.id
-    : !managed || !presentation.activeScriptId || (layer.kind === 'avatar'
+    ? presentation.activeAvatarLayerId === layer.id || presentation.activeAvatarTransitionLayerId === layer.id || presentation.pendingAvatarLayerId === layer.id || (heldAvatarLayerId === layer.id && !hasDecodedAvatarFrame(presentation))
+    : !managed || !presentation.activeScriptId || layer.id === presentation.transitionLayerId || (layer.kind === 'avatar'
     ? !presentation.activeAvatarLayerId || presentation.activeAvatarLayerId === layer.id
     : presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
   const renderedKind = mediaKind(layer, state.scene);
+  const sourceMedia = root.querySelector('[data-media="source"]');
+  const waitingForAvatarFrame = motionManaged
+    && layer.id === presentation.activeAvatarLayerId
+    && sourceMedia instanceof HTMLVideoElement
+    && sourceMedia.dataset.frameReady !== 'true';
   root.dataset.mediaKind = renderedKind;
   root.dataset.avatarState = layer.kind === 'avatar' ? layer.avatarState : '';
   root.classList.toggle('is-chroma', !isText && layer.chromaKey.enabled);
   Object.assign(root.style, {
     left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%`,
-    zIndex: String((layer.kind === 'avatar' ? 2000 : 1000) - index),
-    opacity: layer.visible && speechVisible && presentationVisible ? String(layer.opacity) : '0',
+    zIndex: String(1000 - index),
+    opacity: layer.visible && speechVisible && presentationVisible && !waitingForAvatarFrame ? String(layer.opacity) : '0',
     pointerEvents: layer.kind === 'audio' ? 'none' : 'auto',
     transform: `translate(${(layer.transform.x / box.width) * 100}%, ${(layer.transform.y / box.height) * 100}%) rotate(${layer.transform.rotation}deg) scale(${layer.transform.scaleX}, ${layer.transform.scaleY})`,
   });
@@ -133,7 +170,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
       fontStyle: style.italic ? 'italic' : 'normal', fontWeight: style.bold ? '700' : '400', textAlign: style.align,
     });
   } else {
-    const media = root.querySelector('[data-media="source"]');
+    const media = sourceMedia;
     if (media) {
       media.style.objectFit = isDefaultBackgroundLayer(layer) ? 'cover' : layer.fitMode;
       media.style.borderRadius = layer.kind === 'image' ? `${state.scene.imageSettings.radius}px` : '0';
@@ -259,6 +296,7 @@ function refreshChroma() {
 
 function render(state) {
   currentState = state;
+  syncAvatarFrameHold(state.presentation);
   const ratio = state.scene.width / state.scene.height;
   Object.assign(sceneElement.style, {
     aspectRatio: `${state.scene.width} / ${state.scene.height}`,

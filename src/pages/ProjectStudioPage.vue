@@ -269,7 +269,7 @@ const selectionStyle = computed(() => {
   const box = activeSelectionBox.value;
   const transform = activeTransform.value;
   const index = activeLayer.value ? layers.value.indexOf(activeLayer.value) : 0;
-  const layerZIndex = (activeLayer.value?.kind === 'avatar' ? 2000 : 1000) - Math.max(0, index);
+  const layerZIndex = 1000 - Math.max(0, index);
   return {
     left: `${box.left}%`,
     top: `${box.top}%`,
@@ -641,10 +641,7 @@ function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string,
   // Prepared scripts own visibility and only advance when the active media ends.
   const isManagedMedia = preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id);
   const isManagedAvatar = preparedScripts().some((script) => script.avatarLayerId === layer.id);
-  // The presenter is an operator-priority foreground layer, not part of the
-  // product/background stack. Keep it above every layout source.
-  if (layer.kind === 'avatar') style.zIndex = String(2000 - index);
-  if (layer.kind === 'avatar' && layer.avatarMotion) {
+  if (layer.kind === 'avatar' && layer.avatarMotion && !isManagedMedia) {
     const motion = avatarVideoSnapshot.value;
     if (motion.pendingLayerId === layer.id) style.opacity = 0;
     else if (motion.activeLayerId !== layer.id && motion.previousLayerId !== layer.id) style.opacity = 0;
@@ -1287,7 +1284,7 @@ function selectVoice(option: string): void {
     <div class="studio-left-stack">
       <section class="avatar-state-controls"><strong>Chuyển động avatar</strong><div><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></div></section>
 
-      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
+      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addLocalAudio()" @import-avatar="avatarAddOpen = true" @add-builtin="addLayer" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
     </div>
 
     <main class="studio-canvas-wrap">

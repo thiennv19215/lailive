@@ -1102,5 +1102,46 @@ Continue reducing the template-center mismatch with additional independently sou
 
 ## Session update - immediate imported-media persistence
 
+## Session update - quick text and sticker sources
+
+## Session update - safe sticker placement
+
+## Session update - unified layer ordering
+
+## Session update - gapless waiting-video transitions
+
+## Session update - decoded-frame avatar crossfade
+
+## Session update - Browser Source avatar synchronization
+
+## Session update - resilient automatic Timeline playback
+
+- Timeline media is now marked ready only on the native `playing` event. A clip that was preloaded but cannot actually start no longer leaves the timeline in a false playing state.
+- A rejected `play()` now enters the existing recovery path and advances to the next waiting clip. Avatar videos assigned to Timeline bypass the independent avatar-motion controller so they are not paused outside Timeline control.
+- Validation: prepared playback and avatar state tests (17/17), `pnpm typecheck`, focused ESLint, and `git diff --check` pass. Rendered recheck was unavailable because the test browser tab had already been handed off for user testing.
+
+- Browser Source now retains the outgoing avatar independently when its own decoder has not yet produced a frame for the incoming avatar. It begins the crossfade only after its local compositor has that frame, rather than trusting Studio's earlier readiness signal.
+- Validation: avatar state and Scene Runtime tests (8/8), `pnpm typecheck`, focused ESLint, and `git diff --check` pass. In-app Browser Studio reload at `http://127.0.0.1:5173/#/projects/perfume` renders meaningful content without a framework overlay or console warnings/errors; the fixture does not include two assigned avatar-motion videos for a live transition capture.
+
+- Avatar transitions now wait for Chromium's `requestVideoFrameCallback`, not merely `loadeddata`; the outgoing avatar remains on screen until the incoming avatar has a decoded compositor frame.
+- Studio and loopback Browser Source both keep an unready incoming avatar transparent, then use the existing 300 ms opacity crossfade once its first frame is ready.
+- Validation: avatar state, prepared playback, and scene runtime tests (22/22), `pnpm typecheck`, focused ESLint, and `git diff --check` pass. Visual smoke remains pending because no Browser Editor is connected (`Scene runtime smoke editor was not found`).
+
+- The completed waiting clip now remains visible during the next clip's loading state and is removed only after that successor reports an available frame.
+- Preloaded clips now also re-report readiness when they become active, preventing the controller from remaining in loading state and eliminating the visible black gap.
+- The transition layer is published to the loopback Browser Source so OBS follows the same no-blank-frame behavior.
+- Validation: focused prepared playback, scene runtime, and scene serialization tests (22/22), `pnpm typecheck`, focused ESLint, and `git diff --check` pass.
+
+- Avatar layers no longer receive a fixed foreground z-index. The first item in `Nguồn` is always in front, regardless of source type.
+- The four layer-order buttons therefore allow a layout, text, or sticker to sit above an avatar, with the same result in Studio and Browser Source.
+- Validation: focused Studio preview tests (10/10), `pnpm typecheck`, focused ESLint, and `git diff --check` pass.
+
+- Built-in stickers now enter as a compact upper-left overlay rather than a full-canvas image. Existing layer transforms and their relative ordering are unchanged.
+- The same placement rule is used by the Studio preview and loopback Browser Source.
+- Validation: focused Studio preview tests (9/9), `pnpm typecheck`, focused ESLint, and `git diff --check` pass.
+
+- Added direct text and sticker controls to the Studio source header. Text opens the existing editor; the sticker control adds a built-in `HOT DEAL` layer.
+- Validation: `pnpm typecheck`, focused ESLint, and `git diff --check` pass.
+
 - Adding local image, video, audio, avatar, or a converted GIF now writes the updated scene and media references immediately after the source is accepted. Repairing a missing-media path does the same, so closing the desktop app before the prior 350 ms autosave delay cannot discard an imported source.
 - Validation passes: `pnpm typecheck`, `pnpm lint`, focused project validation/database/Studio preview tests (25/25), and `git diff --check`. Browser smoke at `http://127.0.0.1:5173/#/projects/perfume` rendered Studio without framework overlay or console warnings/errors; native picker persistence still requires Electron rather than the browser-only dev bridge.

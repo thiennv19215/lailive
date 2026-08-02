@@ -33,6 +33,21 @@ describe('prepared script playback controller', () => {
     controller.startSequence();
     const firstRevision = controller.snapshot().playbackRevision;
     controller.onEnded('r1', firstRevision);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2', transitionLayerId: 'video-r1' });
+    controller.onReady('r4', controller.snapshot().playbackRevision);
+    expect(controller.snapshot().transitionLayerId).toBeNull();
+  });
+
+  it('recovers to the next waiting video when the active media cannot start', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [
+      settings.scripts[0]!,
+      { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 1, mediaLayerId: 'video-r2' },
+    ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
+
+    controller.startSequence();
+    const revision = controller.snapshot().playbackRevision;
+    expect(controller.onError('r1', revision, 'play() rejected')).toBe(true);
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
   });
 

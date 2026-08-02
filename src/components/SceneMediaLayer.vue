@@ -39,7 +39,31 @@ let resizeObserver: ResizeObserver | null = null;
 let animationFrame: number | null = null;
 let lastVideoFrameAt = 0;
 let appliedPlaybackRevision = -1;
+let reportedReadyRevision = -1;
 let previousSpeechActive = false;
+let motionFrameRequest: number | null = null;
+let motionFrameReady = false;
+
+function reportPlaybackReady(): void {
+  const media = videoElement.value ?? audioElement.value;
+  const revision = props.playbackRevision ?? 0;
+  if (!props.playbackManaged || !props.playbackActive || !media || media.readyState === 0 || media.paused || reportedReadyRevision === revision) return;
+  reportedReadyRevision = revision;
+  emit('ready', props.layer.id, revision);
+}
+
+function reportMotionReady(): void {
+  const video = videoElement.value;
+  if (!props.motionControlled || props.playbackManaged || !props.motionActive || !video || video.readyState === 0 || motionFrameReady || motionFrameRequest !== null) return;
+  // `loadeddata` only promises media data. Wait for a decoded compositor frame
+  // before asking the state manager to begin its avatar crossfade.
+  motionFrameRequest = video.requestVideoFrameCallback(() => {
+    motionFrameRequest = null;
+    if (!props.motionControlled || !props.motionActive) return;
+    motionFrameReady = true;
+    emit('motionReady', props.layer.id);
+  });
+}
 
 function syncMediaPlayback(): void {
   const media = videoElement.value ?? audioElement.value;
@@ -58,11 +82,18 @@ function syncMediaPlayback(): void {
     void media.play().catch(() => undefined);
     return;
   }
-  if (props.motionControlled) {
+  if (props.motionControlled && !props.playbackManaged) {
     media.loop = props.layer.avatarMotion === 'idle';
-    if (!props.motionActive) { media.pause(); return; }
+    if (!props.motionActive) {
+      media.pause();
+      motionFrameReady = false;
+      if (motionFrameRequest !== null && videoElement.value) videoElement.value.cancelVideoFrameCallback(motionFrameRequest);
+      motionFrameRequest = null;
+      return;
+    }
     if (appliedPlaybackRevision !== (props.playbackRevision ?? 0)) { appliedPlaybackRevision = props.playbackRevision ?? 0; if (media.readyState > 0) media.currentTime = 0; }
     void media.play().catch(() => undefined);
+    reportMotionReady();
     return;
   }
   if (!props.playbackManaged) {
@@ -80,7 +111,9 @@ function syncMediaPlayback(): void {
     appliedPlaybackRevision = revision;
     if (!props.resumePlayback && media.readyState > 0) media.currentTime = 0;
   }
-  void media.play().catch(() => undefined);
+  void media.play().catch((error) => {
+    emit('error', props.layer.id, revision, error instanceof Error ? error.message : `Không thể phát “${props.layer.name}”.`);
+  });
 }
 
 function handleMediaReady(): void {
@@ -90,8 +123,12 @@ function handleMediaReady(): void {
   }
   refreshChromaRenderer();
   syncMediaPlayback();
-  if (props.playbackManaged && props.playbackActive) emit('ready', props.layer.id, props.playbackRevision ?? 0);
-  if (props.motionControlled && props.motionActive) emit('motionReady', props.layer.id);
+  reportPlaybackReady();
+  reportMotionReady();
+}
+
+function handleMediaPlaying(): void {
+  reportPlaybackReady();
 }
 
 function handleMediaError(): void {
@@ -100,7 +137,7 @@ function handleMediaError(): void {
 
 function handleVideoEnded(): void {
   if (props.playbackManaged && props.playbackActive) emit('ended', props.layer.id, props.playbackRevision ?? 0);
-  if (props.motionControlled && props.motionActive) emit('motionEnded', props.layer.id);
+  if (props.motionControlled && !props.playbackManaged && props.motionActive) emit('motionEnded', props.layer.id);
 }
 
 function cancelRenderLoop(): void {
@@ -170,14 +207,15 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   cancelRenderLoop();
+  if (motionFrameRequest !== null && videoElement.value) videoElement.value.cancelVideoFrameCallback(motionFrameRequest);
   resizeObserver?.disconnect();
 });
 </script>
 
 <template>
   <div ref="rootElement" class="scene-runtime-layer scene-runtime-media" :class="{ 'is-selected': selected, 'is-audio-source': mediaKind === 'audio' }" :data-runtime-layer-id="layer.id" :data-media-kind="mediaKind" :data-avatar-state="layer.kind === 'avatar' ? layer.avatarState : undefined" :style="renderStyle">
-    <video v-if="mediaKind === 'video'" ref="videoElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :style="{ objectFit: layer.fitMode }" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" playsinline preload="auto" @loadeddata="handleMediaReady" @error="handleMediaError" @ended="handleVideoEnded" />
-    <audio v-else-if="mediaKind === 'audio'" ref="audioElement" :src="sourceUrl" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" preload="auto" @loadeddata="handleMediaReady" @error="handleMediaError" @ended="handleVideoEnded" />
+    <video v-if="mediaKind === 'video'" ref="videoElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :style="{ objectFit: layer.fitMode }" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" playsinline preload="auto" @loadeddata="handleMediaReady" @playing="handleMediaPlaying" @error="handleMediaError" @ended="handleVideoEnded" />
+    <audio v-else-if="mediaKind === 'audio'" ref="audioElement" :src="sourceUrl" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" preload="auto" @loadeddata="handleMediaReady" @playing="handleMediaPlaying" @error="handleMediaError" @ended="handleVideoEnded" />
     <img v-else ref="imageElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :alt="layer.name" :style="{ objectFit: layer.fitMode }" @load="refreshChromaRenderer" />
     <canvas v-if="mediaKind !== 'audio'" ref="canvasElement" class="scene-chroma-canvas" :class="{ active: chromaEnabled }" aria-hidden="true" />
   </div>

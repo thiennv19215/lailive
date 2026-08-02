@@ -28,11 +28,22 @@ const DEFAULT_BACKGROUND_ASSETS = new Set<NonNullable<ProjectSceneLayer['source'
   'background-white-clean', 'background-white-warm', 'background-white-studio',
 ]);
 
+const STICKER_ASSETS = new Set<NonNullable<ProjectSceneLayer['source']['assetId']>>([
+  'sticker-freeship', 'sticker-hot-deal', 'sticker-live-only', 'sticker-sale-50',
+]);
+
 export function isDefaultBackgroundLayer(layer: ProjectSceneLayer): boolean {
   return layer.kind === 'image'
     && layer.source.type === 'builtin'
     && layer.source.assetId !== null
     && DEFAULT_BACKGROUND_ASSETS.has(layer.source.assetId);
+}
+
+export function isStickerLayer(layer: ProjectSceneLayer): boolean {
+  return layer.kind === 'image'
+    && layer.source.type === 'builtin'
+    && layer.source.assetId !== null
+    && STICKER_ASSETS.has(layer.source.assetId);
 }
 
 export function resolvePreviewSource(layer: ProjectSceneLayer, loadedMediaIds: ReadonlySet<string> = new Set()): PreviewSource | null {
@@ -58,6 +69,8 @@ export interface PreviewLayerBox {
 
 export function previewLayerBox(layer: ProjectSceneLayer, imageIndex = 0): PreviewLayerBox {
   if (isDefaultBackgroundLayer(layer)) return { left: 0, top: 0, width: 100, height: 100 };
+  // Stickers are overlays, never full-canvas images that obscure existing composition.
+  if (isStickerLayer(layer)) return { left: 4, top: 3, width: 32, height: 12 };
   if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
   if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
   if (layer.kind === 'avatar') return { left: 42, top: 25, width: 54, height: 72 };
