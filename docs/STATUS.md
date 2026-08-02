@@ -965,3 +965,10 @@ Continue reducing the template-center mismatch with additional independently sou
 
 - Removed the repeated role label column and the redundant footer assignment actions from Timeline. Each lane now has one role button and its script clips; assignment remains in the left script-component table.
 - Validation: `pnpm typecheck`, focused ESLint, and `git diff --check` pass.
+
+## Session update - source-first sequential Timeline
+
+- Returned script preparation to the `Nguon` panel: selecting an Avatar, Video, or Audio now directly places it in `Tu chay`, `Kich hoat uu tien`, or `Khi noi`, with an attached-audio action beside the selected source. The former duplicate script-component panel is no longer rendered.
+- Reworked the bottom Timeline into an operator view: `Chay tuan tu` contains only waiting scripts and provides start, pause, resume, skip, and stop; activation and conversation scripts are separate event-priority controls.
+- Fixed the playback controller so automatic Timeline playback never advances into activation or conversation scripts. An activation still preempts waiting media, and an active spoken response still completes before the next requested response begins.
+- Validation: `pnpm typecheck`, focused ESLint, and 7 prepared-playback unit tests pass. Browser visual QA remains unavailable because no Browser runtime is connected.

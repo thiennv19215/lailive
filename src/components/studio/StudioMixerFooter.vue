@@ -2,36 +2,14 @@
 import { ListVideo, MonitorUp, Radio, Settings2, Volume2 } from '@lucide/vue';
 import type { ObsStatus } from '../../shared/contracts/obs';
 import type { PreparedScriptPlaybackSnapshot } from '../../modules/playback/prepared-script-playback';
-import type { ProjectPreparedScript, PreparedScriptRole, ProjectSceneLayer } from '../../shared/contracts/projects';
+import type { ProjectPreparedScript } from '../../shared/contracts/projects';
 
-const props = defineProps<{
-  obsStatus: ObsStatus;
-  obsBusy: boolean;
-  scripts: ProjectPreparedScript[];
-  snapshot: PreparedScriptPlaybackSnapshot;
-  activeSource: Pick<ProjectSceneLayer, 'name' | 'kind'> | null;
-}>();
+const props = defineProps<{ obsStatus: ObsStatus; obsBusy: boolean; scripts: ProjectPreparedScript[]; snapshot: PreparedScriptPlaybackSnapshot; }>();
+const emit = defineEmits<{ export: []; openPreparedScripts: []; playRole: ['activation' | 'conversation']; startSequence: []; pause: []; resume: []; skip: []; stop: []; settings: []; start: []; connectObs: []; toggleCamera: []; }>();
 
-const emit = defineEmits<{
-  export: [];
-  addAvatarAudio: [];
-  assignActiveSource: [role: PreparedScriptRole];
-  openPreparedScripts: [];
-  playRole: [role: PreparedScriptRole];
-  playScript: [scriptId: string];
-  settings: [];
-  start: [];
-  connectObs: [];
-  toggleCamera: [];
-}>();
-
-const roles: Array<{ id: PreparedScriptRole; label: string; action: string }> = [
-  { id: 'idle', label: 'Chờ', action: 'Chạy chờ' },
-  { id: 'activation', label: 'Kích hoạt', action: 'Kích hoạt' },
-  { id: 'conversation', label: 'Đang nói', action: 'Nói chuyện' },
-];
-const scriptsForRole = (role: PreparedScriptRole) => props.scripts.filter((script) => script.role === role);
-
+const waitingScripts = () => props.scripts.filter((script) => script.role === 'idle');
+const priorityScripts = () => props.scripts.filter((script) => script.role === 'activation');
+const conversationScripts = () => props.scripts.filter((script) => script.role === 'conversation');
 function outputState(): string {
   if (props.obsStatus.virtualCameraActive) return 'CAM ON';
   if (props.obsStatus.browserSourceReady) return 'CONNECTED';
@@ -43,25 +21,29 @@ function outputState(): string {
 <template>
   <section class="studio-mixer-footer">
     <section class="mixer-panel timeline-panel">
-      <header><ListVideo :size="15" /><span>Timeline kịch bản</span><button type="button" class="timeline-edit-button" @click="emit('openPreparedScripts')">Chỉnh sửa</button></header>
-      <div class="timeline-body">
-        <p v-if="!scripts.length">Chọn video, audio hoặc avatar trên canvas rồi gán nó vào một chế độ bên dưới.</p>
-        <div v-else class="timeline-lanes" aria-label="Timeline kịch bản">
-          <section v-for="role in roles" :key="role.id" class="timeline-lane"><button type="button" class="timeline-role-play" @click="emit('playRole', role.id)">{{ role.action }}</button><strong>{{ role.label }}</strong><div class="timeline-track"><button v-for="script in scriptsForRole(role.id)" :key="script.id" type="button" class="timeline-clip" :class="{ active: snapshot.activeScriptId === script.id, disabled: !script.enabled }" :disabled="!script.enabled" @click="emit('playScript', script.id)"><b>R{{ scripts.indexOf(script) + 1 }}</b><span>{{ script.name }}</span><small>{{ script.playbackType }}</small></button><small v-if="!scriptsForRole(role.id).length" class="timeline-empty">Chưa gán</small></div></section>
+      <header><ListVideo :size="15" /><span>Timeline tự chạy</span><button type="button" class="timeline-edit-button" @click="emit('openPreparedScripts')">Chỉnh chi tiết</button></header>
+      <div class="timeline-body timeline-program">
+        <div class="timeline-program-row">
+          <div class="timeline-program-label"><strong>Chạy tuần tự</strong><small>Không có kích hoạt</small></div>
+          <div class="timeline-track">
+            <button v-for="(script, index) in waitingScripts()" :key="script.id" type="button" class="timeline-clip" :class="{ active: snapshot.activeScriptId === script.id, disabled: !script.enabled }" :disabled="!script.enabled"><b>{{ index + 1 }}</b><span>{{ script.name }}</span><small>{{ script.playbackType }}</small></button>
+            <small v-if="!waitingScripts().length" class="timeline-empty">Thêm nguồn rồi bấm “Tự chạy”.</small>
+          </div>
+          <div class="timeline-playback-controls"><button v-if="snapshot.mode === 'stopped' || snapshot.mode === 'error'" type="button" :disabled="!waitingScripts().length" @click="emit('startSequence')">Chạy Timeline</button><button v-else-if="snapshot.mode === 'playing'" type="button" @click="emit('pause')">Tạm dừng</button><button v-else-if="snapshot.mode === 'paused'" type="button" @click="emit('resume')">Tiếp tục</button><button type="button" :disabled="!snapshot.activeScriptId" @click="emit('skip')">Bỏ qua</button><button type="button" :disabled="snapshot.mode === 'stopped'" @click="emit('stop')">Dừng</button></div>
         </div>
-        <small v-if="snapshot.queuedScriptIds.length" class="timeline-waiting">Đang đợi phát xong câu hiện tại trước khi chuyển.</small>
-        <div class="timeline-actions"><strong>{{ activeSource ? `${activeSource.kind}: ${activeSource.name}` : 'Chọn video, audio hoặc avatar trên canvas' }}</strong><button type="button" :disabled="!activeSource || !['video', 'audio', 'avatar'].includes(activeSource.kind)" @click="emit('addAvatarAudio')">+ Nhập audio</button><button type="button" :disabled="!activeSource || !['video', 'audio', 'avatar'].includes(activeSource.kind)" @click="emit('assignActiveSource', 'idle')">Gán Chờ</button><button type="button" :disabled="!activeSource || !['video', 'audio', 'avatar'].includes(activeSource.kind)" @click="emit('assignActiveSource', 'activation')">Gán Kích hoạt</button><button type="button" :disabled="!activeSource || !['video', 'audio', 'avatar'].includes(activeSource.kind)" @click="emit('assignActiveSource', 'conversation')">Gán Đang nói</button></div>
+        <div class="timeline-priority-row">
+          <div><strong>Kích hoạt ưu tiên</strong><small>Phát trước Timeline khi có sự kiện</small></div>
+          <button type="button" :disabled="!priorityScripts().length" @click="emit('playRole', 'activation')">Phát kích hoạt</button>
+          <span>{{ priorityScripts().length ? priorityScripts().map((script) => script.name).join(' · ') : 'Chưa chuẩn bị nguồn kích hoạt' }}</span>
+        </div>
+        <div v-if="conversationScripts().length" class="timeline-conversation-row"><strong>Khi nói</strong><button type="button" @click="emit('playRole', 'conversation')">Bắt đầu nói</button><span>{{ conversationScripts().map((script) => script.name).join(' · ') }}</span></div>
+        <small v-if="snapshot.queuedScriptIds.length" class="timeline-waiting">Đang chờ phát xong câu hiện tại rồi sẽ chuyển sang kịch bản ưu tiên.</small>
+        <small v-if="snapshot.errorMessage" class="playlist-error">{{ snapshot.errorMessage }}</small>
       </div>
     </section>
     <div class="studio-actions">
-      <section class="livestream-output" :class="{ connected: obsStatus.connected }">
-        <header><Volume2 :size="14" /><span>Đầu ra OBS</span><b>{{ outputState() }}</b></header>
-        <small>{{ obsStatus.browserSourceReady ? obsStatus.sourceName : 'Chưa tạo Browser Source' }}</small>
-        <div><button v-if="!obsStatus.browserSourceReady" type="button" :disabled="obsBusy" @click="emit('connectObs')">{{ obsBusy ? 'Đang kết nối...' : 'Kết nối OBS' }}</button><button v-else type="button" :disabled="obsBusy || (!obsStatus.virtualCameraAvailable && !obsStatus.virtualCameraActive)" @click="emit('toggleCamera')">{{ obsStatus.virtualCameraActive ? 'Dừng camera' : 'Bật camera' }}</button><button type="button" :disabled="obsBusy" @click="emit('settings')">Cài đặt</button></div>
-      </section>
-      <button type="button" class="studio-action muted" @click="emit('export')"><MonitorUp :size="15" />Xuất video</button>
-      <button type="button" class="studio-action live" @click="emit('start')"><Radio :size="15" />Bắt đầu livestream</button>
-      <button type="button" class="studio-action live" @click="emit('settings')"><Settings2 :size="15" />Cài đặt livestream</button>
+      <section class="livestream-output" :class="{ connected: obsStatus.connected }"><header><Volume2 :size="14" /><span>Đầu ra OBS</span><b>{{ outputState() }}</b></header><small>{{ obsStatus.browserSourceReady ? obsStatus.sourceName : 'Chưa tạo Browser Source' }}</small><div><button v-if="!obsStatus.browserSourceReady" type="button" :disabled="obsBusy" @click="emit('connectObs')">{{ obsBusy ? 'Đang kết nối...' : 'Kết nối OBS' }}</button><button v-else type="button" :disabled="obsBusy || (!obsStatus.virtualCameraAvailable && !obsStatus.virtualCameraActive)" @click="emit('toggleCamera')">{{ obsStatus.virtualCameraActive ? 'Dừng camera' : 'Bật camera' }}</button><button type="button" :disabled="obsBusy" @click="emit('settings')">Cài đặt</button></div></section>
+      <button type="button" class="studio-action muted" @click="emit('export')"><MonitorUp :size="15" />Xuất video</button><button type="button" class="studio-action live" @click="emit('start')"><Radio :size="15" />Bắt đầu livestream</button><button type="button" class="studio-action live" @click="emit('settings')"><Settings2 :size="15" />Cài đặt livestream</button>
     </div>
   </section>
 </template>

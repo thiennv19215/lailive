@@ -50,7 +50,6 @@ import StudioAssetBrowser from '../components/studio/StudioAssetBrowser.vue';
 import StudioInspectorSidebar from '../components/studio/StudioInspectorSidebar.vue';
 import StudioMixerFooter from '../components/studio/StudioMixerFooter.vue';
 import StudioPlaylistPanel from '../components/studio/StudioPlaylistPanel.vue';
-import StudioScriptComponents from '../components/studio/StudioScriptComponents.vue';
 import StudioSourcePanel from '../components/studio/StudioSourcePanel.vue';
 import StudioToolRail from '../components/studio/StudioToolRail.vue';
 import { useStudioPlayback } from '../composables/useStudioPlayback';
@@ -517,15 +516,6 @@ function changeAvatarVideoState(state: AvatarVideoState): void {
   if (!avatarVideoManager.request(state)) notice.value = `Avatar ${state} is not ready or already playing.`;
 }
 
-function setAvatarVideoMotion(layerId: string, state: AvatarVideoState): void {
-  const layer = layers.value.find((item) => item.id === layerId && item.kind === 'avatar');
-  if (!layer) return;
-  layer.avatarMotion = state;
-  layer.loop = state === 'idle';
-  layer.muted = true;
-  syncAvatarVideoStates();
-}
-
 function avatarMotionReady(layerId: string): void { avatarVideoManager.ready(layerId); }
 function avatarMotionEnded(layerId: string): void { avatarVideoManager.ended(layerId); }
 
@@ -618,7 +608,7 @@ function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): v
   if (!script) return;
   script.role = role;
   script.name = `R${script.order + 1} - ${role === 'idle' ? 'Chờ' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'} - ${layer.name}`;
-  if (role === 'idle') script.completionMode = 'stop';
+  if (role === 'idle') script.completionMode = 'resume-sequence';
   if (role === 'conversation') script.completionMode = 'resume-sequence';
   syncPlaybackController();
   notice.value = `Đã gán ${layer.name} vào chế độ ${role === 'idle' ? 'Chờ' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'}.`;
@@ -1171,10 +1161,9 @@ function selectVoice(option: string): void {
     <div class="studio-left-stack">
       <StudioAssetBrowser :active-tool="activeTool" @add-layer="addLayer" @add-local-image="addLocalImage" @add-local-video="addLocalVideo" @add-local-audio="addLocalAudio" @open-avatar-uploader="avatarLibraryOpen = true" />
 
-      <StudioScriptComponents :layers="layers" :scripts="preparedScripts()" :active-layer-id="activeLayer?.id ?? null" @select="selectLayer" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @set-motion="setAvatarVideoMotion" @edit="preparedScriptsOpen = true" />
       <section class="avatar-state-controls"><strong>Avatar states</strong><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></section>
 
-      <StudioSourcePanel :layers="layers" :active-layer-index="activeLayerIndex" :primary-action="primaryAction" :source-display-name="sourceDisplayName" @add="addLayer()" @remove="removeLayer" @select="activeLayerIndex = $event" />
+      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" :primary-action="primaryAction" :source-display-name="sourceDisplayName" @add="addLayer()" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @edit-scripts="preparedScriptsOpen = true" />
     </div>
 
     <main class="studio-canvas-wrap">
@@ -1240,7 +1229,7 @@ function selectVoice(option: string): void {
       @open-settings="dialog = 'livestream'"
     />
 
-    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" :active-source="activeLayer ? { name: sourceDisplayName(activeLayer), kind: activeLayer.kind } : null" @add-avatar-audio="addAudioForActiveAvatar" @assign-active-source="assignActiveSourceToRole" @open-prepared-scripts="preparedScriptsOpen = true" @play-script="playbackPlayScript" @play-role="playbackPlayRole" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
+    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" @open-prepared-scripts="preparedScriptsOpen = true" @start-sequence="playbackStart" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
 
     <div v-if="avatarLibraryOpen" class="studio-dialog-backdrop" @click.self="avatarLibraryOpen = false">
       <section class="studio-dialog avatar-library-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-library-title">

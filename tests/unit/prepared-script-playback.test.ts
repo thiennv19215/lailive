@@ -14,14 +14,14 @@ const settings = { enabled: true, scripts: [
 ] };
 
 describe('prepared script playback controller', () => {
-  it('plays scripts in sequence and ignores stale media callbacks', () => {
+  it('plays only waiting scripts in sequence and ignores stale media callbacks', () => {
     const controller = new PreparedScriptPlaybackController(); controller.configure(settings, layers);
     expect(controller.startSequence()).toBe(true);
     const revision = controller.snapshot().playbackRevision;
     expect(controller.onEnded('r1', revision - 1)).toBe(false);
     expect(controller.onReady('r1', revision)).toBe(true);
     expect(controller.onEnded('r1', revision)).toBe(true);
-    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r2', activeLayerId: 'audio-r2', activeAvatarLayerId: 'avatar-b' });
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null });
   });
 
   it('queues after-current scripts while immediate scripts interrupt', () => {

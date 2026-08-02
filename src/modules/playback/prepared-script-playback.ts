@@ -42,7 +42,9 @@ export class PreparedScriptPlaybackController {
   startSequence(startScriptId?: string): boolean {
     this.sequenceActive = true;
     const start = startScriptId ? this.scriptIndex(startScriptId) : 0;
-    return this.activateNext(start < 0 ? 0 : start);
+    // The prepared timeline is the waiting program only. Activation and
+    // conversation scripts are event-driven priority work, never playlist items.
+    return this.activateNext(start < 0 ? 0 : start, 'idle');
   }
 
   playScript(scriptId: string): boolean {
@@ -109,14 +111,15 @@ export class PreparedScriptPlaybackController {
       this.resumeIdleScriptId = null;
       return this.activate(idle);
     }
-    if (active.completionMode === 'next' || (active.completionMode === 'resume-sequence' && this.sequenceActive)) return this.activateNext(active.order + 1);
+    if (active.role === 'idle' && this.sequenceActive) return this.activateNext(active.order + 1, 'idle');
+    if (active.completionMode === 'next') return this.activateNext(active.order + 1, active.role);
     this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
-  private activateNext(start: number): boolean {
+  private activateNext(start: number, role?: PreparedScriptRole): boolean {
     for (let index = start; index < this.settings.scripts.length; index += 1) {
       const script = this.settings.scripts[index]!;
-      if (script.enabled) return this.activate(script);
+      if (script.enabled && (!role || script.role === role)) return this.activate(script);
     }
     this.sequenceActive = false;
     return this.stop();

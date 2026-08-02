@@ -46,7 +46,7 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     if (scripts().length >= 20) return options.onPublishError('Kịch bản chờ đã đủ 20 mục.');
     const order = scripts().length;
     const layer = mediaLayerId ? options.layers.value.find((candidate) => candidate.id === mediaLayerId) : undefined;
-    scripts().push({ id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? 'Thoại chờ'}`, enabled: true, order, playbackType: type, role: 'activation', mediaLayerId, audioLayerId: null, avatarLayerId: null, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: 'after-current', completionMode: 'next' });
+    scripts().push({ id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? 'Thoại chờ'}`, enabled: true, order, playbackType: type, role: 'idle', mediaLayerId, audioLayerId: null, avatarLayerId: null, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: 'after-current', completionMode: 'resume-sequence' });
     sync();
   }
   function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }
