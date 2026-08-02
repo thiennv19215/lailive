@@ -1024,3 +1024,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - automatic waiting timeline start
 
 - A project with enabled waiting scripts now starts Video 1 after local media is ready. Adding or assigning a new `Chờ` source also starts the Timeline when it is stopped; further waiting sources remain queued in their configured order.
+
+## Session update - explicit automatic-run queue
+
+- Replaced the ambiguous `Chờ` Timeline terminology with `Hàng tự chạy` across source assignment, Timeline, and detailed script editing. The Timeline now displays its item count and states that clips run in order from item 1 through the final item.

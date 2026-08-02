@@ -678,12 +678,14 @@ function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): v
   }
   if (!script) return;
   script.role = role;
-  script.name = `R${script.order + 1} - ${role === 'idle' ? 'Chờ' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'} - ${layer.name}`;
+  script.name = `R${script.order + 1} - ${role === 'idle' ? 'Tự chạy' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'} - ${layer.name}`;
   if (role === 'idle') script.completionMode = 'resume-sequence';
   if (role === 'conversation') script.completionMode = 'resume-sequence';
   syncPlaybackController();
   if (role === 'idle') startWaitingTimelineIfReady();
-  notice.value = `Đã gán ${layer.name} vào chế độ ${role === 'idle' ? 'Chờ' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'}.`;
+  notice.value = role === 'idle'
+    ? `Đã thêm ${layer.name} vào Hàng tự chạy. Nó sẽ phát sau các mục đang có.`
+    : `Đã gán ${layer.name} vào chế độ ${role === 'activation' ? 'Kích hoạt' : 'Đang nói'}.`;
 }
 
 function setAvatarPreviewState(state: AvatarSpeechState): void {

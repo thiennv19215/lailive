@@ -29,7 +29,7 @@ const activeScript = computed(() => activeLayer.value
   : undefined);
 
 function roleLabel(role: PreparedScriptRole): string {
-  return role === 'idle' ? 'Tự chạy' : role === 'activation' ? 'Ưu tiên kích hoạt' : 'Đang nói';
+  return role === 'idle' ? 'Hàng tự chạy' : role === 'activation' ? 'Ưu tiên kích hoạt' : 'Đang nói';
 }
 
 onMounted(async () => {
@@ -56,11 +56,11 @@ onMounted(async () => {
       </li>
     </ul>
     <section class="source-script-workbench" :class="{ disabled: !activeCanScript }">
-      <header><strong>Chuẩn bị Timeline</strong><button type="button" @click="emit('editScripts')">Chi tiết</button></header>
+      <header><strong>Đưa vào Timeline</strong><button type="button" @click="emit('editScripts')">Chi tiết</button></header>
       <template v-if="activeCanScript && activeLayer">
         <p><b>{{ sourceDisplayName(activeLayer) }}</b><span v-if="activeScript"> · {{ roleLabel(activeScript.role) }}</span></p>
         <div class="source-script-actions">
-          <button type="button" :class="{ active: activeScript?.role === 'idle' }" @click="emit('assign', activeLayer.id, 'idle')">+ Tự chạy</button>
+          <button type="button" :class="{ active: activeScript?.role === 'idle' }" @click="emit('assign', activeLayer.id, 'idle')">+ Hàng tự chạy</button>
           <button type="button" :class="{ active: activeScript?.role === 'activation' }" @click="emit('assign', activeLayer.id, 'activation')">Kích hoạt ưu tiên</button>
           <button type="button" :class="{ active: activeScript?.role === 'conversation' }" @click="emit('assign', activeLayer.id, 'conversation')">Khi nói</button>
         </div>

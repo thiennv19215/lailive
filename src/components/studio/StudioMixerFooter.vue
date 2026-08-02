@@ -21,14 +21,14 @@ function outputState(): string {
 <template>
   <section class="studio-mixer-footer">
     <section class="mixer-panel timeline-panel">
-      <p class="timeline-waiting">Video chờ tự động tạm dừng cho phản hồi và tiếp tục đúng vị trí sau khi hàng đợi trống.</p>
+      <p class="timeline-waiting">Hàng tự chạy phát lần lượt từ mục 1 đến mục cuối. Khi có phản hồi ưu tiên, mục hiện tại tạm dừng rồi tiếp tục đúng vị trí.</p>
       <header><ListVideo :size="15" /><span>Timeline tự chạy</span><button type="button" class="timeline-edit-button" @click="emit('openPreparedScripts')">Chỉnh chi tiết</button></header>
       <div class="timeline-body timeline-program">
         <div class="timeline-program-row">
-          <div class="timeline-program-label"><strong>Chạy tuần tự</strong><small>Không có kích hoạt</small></div>
+          <div class="timeline-program-label"><strong>Hàng tự chạy</strong><small>{{ waitingScripts().length }} mục · phát tuần tự</small></div>
           <div class="timeline-track">
-            <button v-for="(script, index) in waitingScripts()" :key="script.id" type="button" class="timeline-clip" :class="{ active: snapshot.activeScriptId === script.id, disabled: !script.enabled }" :disabled="!script.enabled"><b>{{ index + 1 }}</b><span>{{ script.name }}</span><small>{{ script.playbackType }}</small></button>
-            <small v-if="!waitingScripts().length" class="timeline-empty">Thêm nguồn rồi bấm “Tự chạy”.</small>
+            <button v-for="(script, index) in waitingScripts()" :key="script.id" type="button" class="timeline-clip" :class="{ active: snapshot.activeScriptId === script.id, disabled: !script.enabled }" :disabled="!script.enabled"><b>{{ index + 1 }}</b><span>{{ script.name }}</span><small>{{ script.playbackType }} · tự chạy</small></button>
+            <small v-if="!waitingScripts().length" class="timeline-empty">Chọn source rồi bấm “+ Hàng tự chạy”.</small>
           </div>
           <div class="timeline-playback-controls"><button v-if="snapshot.mode === 'stopped' || snapshot.mode === 'error'" type="button" :disabled="!waitingScripts().length" @click="emit('startSequence')">Chạy Timeline</button><button v-else-if="snapshot.mode === 'playing'" type="button" @click="emit('pause')">Tạm dừng</button><button v-else-if="snapshot.mode === 'paused'" type="button" @click="emit('resume')">Tiếp tục</button><button type="button" :disabled="!snapshot.activeScriptId" @click="emit('skip')">Bỏ qua</button><button type="button" :disabled="snapshot.mode === 'stopped'" @click="emit('stop')">Dừng</button></div>
         </div>
