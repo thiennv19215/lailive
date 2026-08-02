@@ -14,13 +14,14 @@ export const sceneRuntimePublishSchema = z.object({
     pendingAvatarLayerId: z.string().trim().min(1).max(120).nullable(),
     managedLayerIds: z.array(z.string().trim().min(1).max(120)).max(40),
     playbackRevision: z.number().int().min(0),
+    resumeActiveMedia: z.boolean(),
     activePaused: z.boolean(),
     activeMuted: z.boolean(),
     activeVolume: z.number().finite().min(0).max(1),
     activeLoop: z.boolean(),
     activeAudioMuted: z.boolean(),
     activeAudioVolume: z.number().finite().min(0).max(1),
-  }).optional().default({ mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 }),
+  }).optional().default({ mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 }),
 });
 
 export const sceneRuntimeReadySchema = z.object({

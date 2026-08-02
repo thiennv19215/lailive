@@ -60,7 +60,25 @@ describe('prepared script playback controller', () => {
     expect(controller.playRole('conversation')).toBe(true);
     const revision = controller.snapshot().playbackRevision;
     expect(controller.onEnded('r3', revision)).toBe(true);
-    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', activeAvatarLayerId: 'avatar-a' });
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', activeAvatarLayerId: 'avatar-a', resumeActiveMedia: true });
+  });
+
+  it('queues each priority reply FIFO, then resumes the interrupted waiting video', () => {
+    const controller = new PreparedScriptPlaybackController(); controller.configure(settings, layers);
+    controller.startSequence();
+    const waitingRevision = controller.snapshot().playbackRevision;
+    controller.onReady('r1', waitingRevision);
+    expect(controller.playRole('activation')).toBe(true);
+    const activationRevision = controller.snapshot().playbackRevision;
+    expect(controller.playRole('conversation')).toBe(true);
+    expect(controller.playRole('conversation')).toBe(true);
+    expect(controller.snapshot().queuedScriptIds).toEqual(['r3', 'r3']);
+    controller.onEnded('r2', activationRevision);
+    const firstConversationRevision = controller.snapshot().playbackRevision;
+    controller.onEnded('r3', firstConversationRevision);
+    const secondConversationRevision = controller.snapshot().playbackRevision;
+    controller.onEnded('r3', secondConversationRevision);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', resumeActiveMedia: true });
   });
 
   it('waits for an active response to finish before switching conversation mode', () => {

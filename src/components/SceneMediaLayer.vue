@@ -14,6 +14,7 @@ const props = defineProps<{
   playbackActive?: boolean;
   playbackPaused?: boolean;
   playbackRevision?: number;
+  resumePlayback?: boolean;
   speechManaged?: boolean;
   speechActive?: boolean;
   motionControlled?: boolean;
@@ -76,7 +77,7 @@ function syncMediaPlayback(): void {
   const revision = props.playbackRevision ?? 0;
   if (appliedPlaybackRevision !== revision) {
     appliedPlaybackRevision = revision;
-    if (media.readyState > 0) media.currentTime = 0;
+    if (!props.resumePlayback && media.readyState > 0) media.currentTime = 0;
   }
   void media.play().catch(() => undefined);
 }
@@ -153,7 +154,7 @@ watch(() => [
   props.layer.chromaKey.tolerance,
   props.layer.fitMode,
 ], refreshChromaRenderer);
-watch(() => [props.playbackManaged, props.playbackActive, props.playbackPaused, props.playbackRevision, props.speechManaged, props.speechActive, props.motionControlled, props.motionActive, props.layer.loop, props.layer.muted, props.layer.volume], syncMediaPlayback);
+watch(() => [props.playbackManaged, props.playbackActive, props.playbackPaused, props.playbackRevision, props.resumePlayback, props.speechManaged, props.speechActive, props.motionControlled, props.motionActive, props.layer.loop, props.layer.muted, props.layer.volume], syncMediaPlayback);
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(refreshChromaRenderer);

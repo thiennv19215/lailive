@@ -253,7 +253,8 @@ export function createProjectSceneLayer(
     muted: kind === 'video',
     volume: 1,
     avatarState: kind === 'avatar' ? 'idle' : 'none',
-    avatarMotion: kind === 'avatar' ? 'idle' : null,
+    // An avatar becomes motion-managed only after the operator assigns a state.
+    avatarMotion: null,
     chromaKey: { enabled: false, color: '#00ff00', tolerance: 24 },
     source: { ...source },
   };

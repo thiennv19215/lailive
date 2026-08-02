@@ -8,6 +8,7 @@ const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: stri
 
 <template>
   <section class="source-panel playlist-panel">
+    <p class="playlist-state">Video chờ tạm dừng khi có phản hồi. Các câu chào và tư vấn phát theo hàng đợi, sau đó video cũ tiếp tục đúng vị trí.</p>
     <header><strong>Kịch bản chờ</strong><button type="button" class="switch" :class="{ on: enabled }" :aria-pressed="enabled" @click="emit('toggle')"><span /></button></header>
     <p class="playlist-state">{{ snapshot.mode }}<span v-if="snapshot.activeScriptId"> · Đang phát {{ scripts.find((script) => script.id === snapshot.activeScriptId)?.name }}</span></p>
     <div class="playlist-controls">

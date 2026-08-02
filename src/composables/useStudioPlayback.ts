@@ -11,18 +11,23 @@ type StudioPlaybackOptions = {
   avatarState: Ref<AvatarSpeechState>; buildSceneDocument: () => ProjectSceneDocument; onPublishError: (message: string) => void;
   avatarVideo: Ref<AvatarVideoSnapshot>;
 };
-const EMPTY_SNAPSHOT: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
+const EMPTY_SNAPSHOT: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null };
 
 export function useStudioPlayback(options: StudioPlaybackOptions) {
   const snapshot = ref<PreparedScriptPlaybackSnapshot>(EMPTY_SNAPSHOT);
   const controller = new PreparedScriptPlaybackController();
-  let publishInFlight = false;
-  let publishQueued = false;
+  let publishTail: Promise<void> = Promise.resolve();
   let ttsAbort: AbortController | null = null;
   const scripts = () => options.scene.value.preparedScriptSettings.scripts;
   const activeScript = (current = snapshot.value) => scripts().find((script) => script.id === current.activeScriptId);
 
   function sync(): void {
+    const avatarLayerIds = new Set(options.layers.value.filter((layer) => layer.kind === 'avatar').map((layer) => layer.id));
+    // Older projects could retain a video/audio ID in this avatar-only field.
+    // Repair it before autosave so the project becomes valid without losing media.
+    scripts().forEach((script) => {
+      if (script.avatarLayerId && !avatarLayerIds.has(script.avatarLayerId)) script.avatarLayerId = null;
+    });
     controller.configure(options.scene.value.preparedScriptSettings, options.layers.value
       .filter((layer) => layer.kind === 'video' || layer.kind === 'audio' || layer.kind === 'avatar')
       .map((layer) => ({ id: layer.id, kind: layer.kind, loop: layer.loop, muted: layer.muted, volume: layer.volume, available: layer.source.type === 'builtin' || options.mediaStatuses.value.find((status) => status.id === layer.source.mediaReferenceId)?.exists !== false })));
@@ -32,15 +37,17 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     const layer = script?.mediaLayerId ? options.layers.value.find((candidate) => candidate.id === script.mediaLayerId) : undefined;
     const audio = script?.audioLayerId ? options.layers.value.find((candidate) => candidate.id === script.audioLayerId) : undefined;
     const motion = options.avatarVideo.value;
-    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: script?.role === 'idle' || layer?.loop === true, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
+    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), resumeActiveMedia: current.resumeActiveMedia, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: script?.role === 'idle' || layer?.loop === true, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
   }
-  async function publish(current = snapshot.value): Promise<void> {
-    if (!options.projectLoaded.value) return;
-    if (publishInFlight) { publishQueued = true; return; }
-    publishInFlight = true;
-    try { await globalThis.window.desktopApi.sceneRuntime.publish(structuredClone(options.buildSceneDocument()), options.avatarState.value, structuredClone(presentation(current))); }
-    catch (error) { options.onPublishError(error instanceof Error ? error.message : String(error)); }
-    finally { publishInFlight = false; if (publishQueued) { publishQueued = false; void publish(); } }
+  function publish(): Promise<void> {
+    if (!options.projectLoaded.value) return Promise.resolve();
+    // Serialize publications. Callers that await this only receive control once
+    // their current scene is available from the loopback asset server.
+    publishTail = publishTail.catch(() => undefined).then(async () => {
+      try { await globalThis.window.desktopApi.sceneRuntime.publish(structuredClone(options.buildSceneDocument()), options.avatarState.value, structuredClone(presentation(snapshot.value))); }
+      catch (error) { options.onPublishError(error instanceof Error ? error.message : String(error)); }
+    });
+    return publishTail;
   }
   function add(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null): void {
     if (scripts().length >= 20) return options.onPublishError('Kịch bản chờ đã đủ 20 mục.');
@@ -73,7 +80,7 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     options.avatarState.value = script && (script.playbackType === 'audio' || script.playbackType === 'tts' || Boolean(script.audioLayerId)) && ['loading', 'playing', 'paused'].includes(current.mode) ? 'talking' : 'idle';
     if (script?.playbackType === 'tts' && current.mode === 'loading' && (previous.activeScriptId !== script.id || previous.playbackRevision !== current.playbackRevision)) void startTts(script, current.playbackRevision);
     if (!current.activeScriptId && previous.activeScriptId) cancelTts();
-    void publish(current);
+    void publish();
   });
   onBeforeUnmount(() => { cancelTts(); unsubscribe(); controller.dispose(); });
   return { snapshot, scripts, sync, publish, add, remove, move, normalize, toggle, startSequence: (id?: string) => controller.startSequence(id), playScript: (id: string) => controller.playScript(id), playRole: (role: PreparedScriptRole) => controller.playRole(role), pause: () => controller.pause(), resume: () => controller.resume(), skip: () => controller.skip(), stop: () => { cancelTts(); return controller.stop(); }, ready: (scriptId: string, revision: number) => controller.onReady(scriptId, revision), ended: (scriptId: string, revision: number) => controller.onEnded(scriptId, revision), error: (scriptId: string, revision: number, message: string) => controller.onError(scriptId, revision, message) };

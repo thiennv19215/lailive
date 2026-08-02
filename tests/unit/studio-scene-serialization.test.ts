@@ -37,6 +37,7 @@ function preparePlainPresentation(
     pendingAvatarLayerId: null,
     managedLayerIds: enabled ? playlistLayerIds.map((id) => String(id)) : [],
     playbackRevision: Number(playbackRevision),
+    resumeActiveMedia: false,
     activePaused: mode !== 'idle',
     activeMuted: false,
     activeVolume: 1,

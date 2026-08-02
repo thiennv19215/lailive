@@ -326,7 +326,7 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
       transform: projectLayerTransformSchema.catch(defaults.layers[0]?.transform ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }).parse(candidate.transform),
       visible: candidate.visible ?? true, locked: candidate.locked ?? false, opacity: candidate.opacity ?? 1, fitMode: candidate.fitMode ?? 'contain',
       loop: candidate.loop ?? (kind === 'gif' || kind === 'video' || kind === 'audio'), muted: candidate.muted ?? (kind === 'video'), volume: candidate.volume ?? 1,
-      avatarState: candidate.avatarState ?? (kind === 'avatar' ? 'idle' : 'none'), avatarMotion: candidate.avatarMotion ?? (kind === 'avatar' ? 'idle' : null), chromaKey: candidate.chromaKey ?? { enabled: false, color: '#00ff00', tolerance: 24 },
+      avatarState: candidate.avatarState ?? (kind === 'avatar' ? 'idle' : 'none'), avatarMotion: candidate.avatarMotion ?? null, chromaKey: candidate.chromaKey ?? { enabled: false, color: '#00ff00', tolerance: 24 },
       source: candidate.source ?? { type: 'none', assetId: null, mediaReferenceId: null },
     });
   });

@@ -21,7 +21,7 @@ export class AvatarVideoStateManager {
   private listeners = new Set<(snapshot: AvatarVideoSnapshot) => void>();
   private value: AvatarVideoSnapshot = { mode: 'idle', state: null, activeLayerId: null, previousLayerId: null, pendingLayerId: null, revision: 0, queuedStates: [], errorMessage: null };
 
-  configure(entries: Iterable<[AvatarVideoState, string]>): void { this.states = new Map(entries); if (!this.value.activeLayerId) this.request('idle'); }
+  configure(entries: Iterable<[AvatarVideoState, string]>): void { this.states = new Map(entries); if (!this.value.activeLayerId && this.states.has('idle')) this.request('idle'); }
   subscribe(listener: (snapshot: AvatarVideoSnapshot) => void): () => void { this.listeners.add(listener); listener(this.snapshot()); return () => this.listeners.delete(listener); }
   snapshot(): AvatarVideoSnapshot { return { ...this.value, queuedStates: [...this.value.queuedStates] }; }
   request(state: AvatarVideoState): boolean {

@@ -89,15 +89,15 @@ function layerBox(layer, imageIndex) {
 function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
-  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
   const managed = presentation.managedLayerIds.includes(layer.id);
   // A script-selected avatar owns its visibility; legacy idle/talking pairs keep their role behavior.
   const speechVisible = layer.kind !== 'avatar' || managed || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
   const motionManaged = layer.kind === 'avatar' && Boolean(layer.avatarMotion);
   const presentationVisible = motionManaged
     ? presentation.activeAvatarLayerId === layer.id || presentation.activeAvatarTransitionLayerId === layer.id || presentation.pendingAvatarLayerId === layer.id
-    : !managed || (layer.kind === 'avatar'
-    ? presentation.activeAvatarLayerId === layer.id
+    : !managed || !presentation.activeScriptId || (layer.kind === 'avatar'
+    ? !presentation.activeAvatarLayerId || presentation.activeAvatarLayerId === layer.id
     : presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
   const renderedKind = mediaKind(layer, state.scene);
   root.dataset.mediaKind = renderedKind;
@@ -105,7 +105,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
   root.classList.toggle('is-chroma', !isText && layer.chromaKey.enabled);
   Object.assign(root.style, {
     left: `${box.left}%`, top: `${box.top}%`, width: `${box.width}%`, height: `${box.height}%`,
-    zIndex: String(1000 - index),
+    zIndex: String((layer.kind === 'avatar' ? 2000 : 1000) - index),
     opacity: layer.visible && speechVisible && presentationVisible ? String(layer.opacity) : '0',
     pointerEvents: layer.kind === 'audio' ? 'none' : 'auto',
     transform: `translate(${(layer.transform.x / box.width) * 100}%, ${(layer.transform.y / box.height) * 100}%) rotate(${layer.transform.rotation}deg) scale(${layer.transform.scaleX}, ${layer.transform.scaleY})`,
@@ -148,7 +148,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
         } else {
           if (managed && media.dataset.playbackRevision !== revision) {
             media.dataset.playbackRevision = revision;
-            media.currentTime = 0;
+            if (!presentation.resumeActiveMedia) media.currentTime = 0;
           }
           void media.play().catch((error) => report('warn', error instanceof Error ? error.message : error));
         }

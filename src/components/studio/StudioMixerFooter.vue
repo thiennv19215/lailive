@@ -21,6 +21,7 @@ function outputState(): string {
 <template>
   <section class="studio-mixer-footer">
     <section class="mixer-panel timeline-panel">
+      <p class="timeline-waiting">Video chờ tự động tạm dừng cho phản hồi và tiếp tục đúng vị trí sau khi hàng đợi trống.</p>
       <header><ListVideo :size="15" /><span>Timeline tự chạy</span><button type="button" class="timeline-edit-button" @click="emit('openPreparedScripts')">Chỉnh chi tiết</button></header>
       <div class="timeline-body timeline-program">
         <div class="timeline-program-row">

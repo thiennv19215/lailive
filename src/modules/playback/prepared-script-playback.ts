@@ -9,6 +9,8 @@ export interface PreparedScriptPlaybackSnapshot {
   activeAudioLayerId: string | null;
   activeAvatarLayerId: string | null;
   playbackRevision: number;
+  // A resumed waiting video keeps its existing media element and currentTime.
+  resumeActiveMedia: boolean;
   queuedScriptIds: string[];
   errorMessage: string | null;
 }
@@ -26,8 +28,8 @@ export class PreparedScriptPlaybackController {
   private listeners = new Set<Listener>();
   private disposed = false;
   private sequenceActive = false;
-  private resumeIdleScriptId: string | null = null;
-  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
+  private suspendedIdleScriptId: string | null = null;
+  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null };
 
   configure(settings: ProjectPreparedScriptSettings, layers: readonly PlayableLayer[]): void {
     this.settings = { enabled: settings.enabled, scripts: [...settings.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
@@ -65,16 +67,16 @@ export class PreparedScriptPlaybackController {
     const script = this.settings.scripts.find((candidate) => candidate.enabled && candidate.role === role);
     if (!script) return this.fail(`No enabled ${role} script is configured.`);
     if (role === 'idle') {
-      this.resumeIdleScriptId = null;
+      this.suspendedIdleScriptId = null;
       this.sequenceActive = false;
       return this.activate(script);
     }
     const active = this.snapshotValue.activeScriptId ? this.script(this.snapshotValue.activeScriptId) : undefined;
-    // Never cut an active spoken response. A role request waits for its ended
-    // callback; idle media may switch immediately because it is background state.
-    if (active && active.role !== 'idle') return this.enqueue(script.id);
-    this.resumeIdleScriptId = active?.role === 'idle' ? active.id : null;
-    return this.playScript(script.id);
+    // Replies never overlap. They queue FIFO behind another reply, but pause a
+    // waiting video immediately so the viewer is answered without delay.
+    if (active && active.role !== 'idle') return this.enqueue(script.id, true);
+    if (active?.role === 'idle') this.suspendedIdleScriptId = active.id;
+    return this.activate(script);
   }
 
   pause(): boolean { if (this.snapshotValue.mode !== 'playing') return false; this.snapshotValue.mode = 'paused'; this.emit(); return true; }
@@ -82,8 +84,8 @@ export class PreparedScriptPlaybackController {
   stop(): boolean {
     const changed = this.snapshotValue.mode !== 'stopped';
     this.sequenceActive = false;
-    this.resumeIdleScriptId = null;
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
+    this.suspendedIdleScriptId = null;
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
     if (changed) this.emit();
     return changed;
   }
@@ -106,14 +108,14 @@ export class PreparedScriptPlaybackController {
     if (!active) return false;
     const queued = this.snapshotValue.queuedScriptIds.shift();
     if (queued) return this.activate(this.script(queued)!);
-    const idle = this.resumeIdleScriptId ? this.script(this.resumeIdleScriptId) : undefined;
+    const idle = this.suspendedIdleScriptId ? this.script(this.suspendedIdleScriptId) : undefined;
     if (idle?.enabled && active.role !== 'idle') {
-      this.resumeIdleScriptId = null;
-      return this.activate(idle);
+      this.suspendedIdleScriptId = null;
+      return this.activate(idle, true);
     }
     if (active.role === 'idle' && this.sequenceActive) return this.activateNext(active.order + 1, 'idle');
     if (active.completionMode === 'next') return this.activateNext(active.order + 1, active.role);
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private activateNext(start: number, role?: PreparedScriptRole): boolean {
@@ -124,7 +126,7 @@ export class PreparedScriptPlaybackController {
     this.sequenceActive = false;
     return this.stop();
   }
-  private activate(script: ProjectPreparedScript): boolean {
+  private activate(script: ProjectPreparedScript, resumeActiveMedia = false): boolean {
     if (script.playbackType !== 'tts') {
       const layer = script.mediaLayerId ? this.layers.get(script.mediaLayerId) : undefined;
       if (!layer || !layer.available || layer.kind !== script.playbackType) return this.fail(`Nguồn ${script.playbackType} của ${script.name} chưa sẵn sàng.`);
@@ -137,17 +139,17 @@ export class PreparedScriptPlaybackController {
       const avatar = this.layers.get(script.avatarLayerId);
       if (!avatar || !avatar.available || avatar.kind !== 'avatar') return this.fail(`Avatar for ${script.name} is unavailable.`);
     }
-    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, activeAudioLayerId: script.audioLayerId, activeAvatarLayerId: script.avatarLayerId, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, activeAudioLayerId: script.audioLayerId, activeAvatarLayerId: script.avatarLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
-  private enqueue(scriptId: string): true {
-    if (!this.snapshotValue.queuedScriptIds.includes(scriptId)) this.snapshotValue.queuedScriptIds.push(scriptId);
+  private enqueue(scriptId: string, allowDuplicates = false): true {
+    if (allowDuplicates || !this.snapshotValue.queuedScriptIds.includes(scriptId)) this.snapshotValue.queuedScriptIds.push(scriptId);
     this.emit();
     return true;
   }
   private script(id: string): ProjectPreparedScript | undefined { return this.settings.scripts.find((script) => script.id === id); }
   private scriptIndex(id: string): number { return this.settings.scripts.findIndex((script) => script.id === id); }
   private matches(scriptId: string, revision: number): boolean { return !this.disposed && this.snapshotValue.activeScriptId === scriptId && this.snapshotValue.playbackRevision === revision; }
-  private fail(message: string): false { this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, errorMessage: message }; this.emit(); return false; }
+  private fail(message: string): false { this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: message }; this.emit(); return false; }
   private emit(): void { if (!this.disposed) for (const listener of this.listeners) listener(this.snapshot()); }
 }

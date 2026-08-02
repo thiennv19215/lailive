@@ -972,3 +972,37 @@ Continue reducing the template-center mismatch with additional independently sou
 - Reworked the bottom Timeline into an operator view: `Chay tuan tu` contains only waiting scripts and provides start, pause, resume, skip, and stop; activation and conversation scripts are separate event-priority controls.
 - Fixed the playback controller so automatic Timeline playback never advances into activation or conversation scripts. An activation still preempts waiting media, and an active spoken response still completes before the next requested response begins.
 - Validation: `pnpm typecheck`, focused ESLint, and 7 prepared-playback unit tests pass. Browser visual QA remains unavailable because no Browser runtime is connected.
+## Session update - priority replies pause and resume waiting video
+
+- Redesigned prepared playback around the operator workflow: waiting videos are background content, while greeting and consultation scripts are priority replies.
+- A priority reply now pauses the current waiting video immediately. Further replies queue FIFO behind the active reply; when the queue drains, the original waiting video resumes without resetting its playback position, then the waiting sequence continues normally.
+- Added `resumeActiveMedia` to the Studio and Browser Source scene presentation contract so both renderers preserve the media element's current time when returning from a reply.
+- The prepared-script dialog and Timeline now state the priority/resume policy explicitly, rather than asking the operator to choose an interruption rule for each response.
+- Validation: focused ESLint, `pnpm typecheck`, and 10 focused Vitest assertions pass (including FIFO replies and resumption of the interrupted waiting video).
+## Session update - visible waiting sources and foreground avatar
+
+- Repaired the autosave failure shown in Studio: before playback synchronization, stale `avatarLayerId` values that point to a video or audio layer are cleared without removing the actual source or script.
+- Managed video layers now remain visible when no script is active, including immediately after import. Active playback still controls which managed visual source is visible.
+- Avatar layers now render above background, product, and video layout layers in both the Studio preview and Browser Source. Existing readiness-gated 300 ms avatar crossfade remains in place, so the outgoing state stays visible until the incoming video can play.
+- Validation: focused ESLint and `pnpm typecheck` pass; 54 focused validation, playback, preview, and serialization assertions pass.
+## Session update - large local video streaming
+
+- Fixed blank/stalled imported video and avatar media caused by the safe 100 MB Data URL IPC limit. Studio now falls back to the existing loopback Scene Runtime asset URL after publishing the updated scene, matching the controlled path used by OBS Browser Source.
+- Local media remains visible in Studio even when it is too large to safely marshal through Electron IPC as a base64 Data URL; no renderer Node access or `file:///` fallback was introduced.
+- Validation: focused Studio ESLint, `pnpm typecheck`, and 9 Studio preview/scene serialization assertions pass.
+## Session update - foreground transform controls
+
+- Fixed avatar/video transform controls after foreground layering: the selected layer's move/resize/rotate overlay and layer-order toolbar now render above every authored source and hit target.
+- This preserves the avatar foreground guarantee while restoring pointer access to drag and resize handles.
+- Validation: focused Studio ESLint and `pnpm typecheck` pass; `git diff --check` passes.
+## Session update - sequential local media publish ordering
+
+- Fixed the second-import blank-media race: Scene Runtime publishes are now serialized, and a new local media ID is exposed to Studio only after its scene publication completes.
+- Runtime asset URLs include a publication revision so Chromium retries the source rather than retaining an earlier 404 response.
+- Validation: focused Studio/playback ESLint, `pnpm typecheck`, and 17 playback, preview, and scene serialization assertions pass.
+## Session update - duplicate avatar state repair
+
+- Diagnosed the second-avatar blank layer from the live Scene Runtime snapshot: both uploaded MP4s were valid and returned HTTP 200, but were assigned to the singleton `idle` avatar motion state.
+- New avatar uploads are now ordinary visible avatar layers until an operator explicitly assigns a motion state. Hydration and synchronization repair duplicate state assignments by retaining the frontmost assignment and clearing later duplicates, then persist the repair.
+- The avatar state manager no longer enters an error state when no MP4 motion has been assigned yet.
+- Validation: focused ESLint and `pnpm typecheck` pass; 47 focused avatar-state, project-validation, and playback assertions pass.

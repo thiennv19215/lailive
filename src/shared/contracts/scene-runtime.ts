@@ -11,6 +11,8 @@ export interface ScenePresentationState {
   pendingAvatarLayerId: string | null;
   managedLayerIds: string[];
   playbackRevision: number;
+  // True only when returning from a priority reply to a paused waiting video.
+  resumeActiveMedia: boolean;
   activePaused: boolean;
   activeMuted: boolean;
   activeVolume: number;
@@ -20,7 +22,7 @@ export interface ScenePresentationState {
 }
 
 export function createDefaultScenePresentationState(): ScenePresentationState {
-  return { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
+  return { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
 }
 
 export interface SceneRuntimeState {
