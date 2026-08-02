@@ -36,6 +36,13 @@ describe('prepared script playback controller', () => {
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
   });
 
+  it('plays an uploaded video avatar as timeline video media', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [{ ...settings.scripts[0]!, mediaLayerId: 'avatar-a', avatarLayerId: null }] }, layers);
+    expect(controller.startSequence()).toBe(true);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', activeLayerId: 'avatar-a' });
+  });
+
   it('continues with the next waiting script if the interrupted one is removed', () => {
     const controller = new PreparedScriptPlaybackController();
     controller.configure({ ...settings, scripts: [

@@ -1028,3 +1028,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - explicit automatic-run queue
 
 - Replaced the ambiguous `Chờ` Timeline terminology with `Hàng tự chạy` across source assignment, Timeline, and detailed script editing. The Timeline now displays its item count and states that clips run in order from item 1 through the final item.
+
+## Session update - video avatar timeline playback
+
+- Uploaded avatar MP4s assigned to `Hàng tự chạy` are now prepared as video clips rather than short mock TTS clips. Existing waiting avatar scripts are upgraded on the next automatic start, so Video 1 plays to its natural end before Video 2 starts.

@@ -537,9 +537,31 @@ function removeLayer(index: number): void {
 }
 
 function startWaitingTimelineIfReady(): void {
-  if (!persistedScene.value.preparedScriptSettings.enabled || playlistSnapshot.value.mode !== 'stopped') return;
+  let convertedAvatarVideo = false;
+  for (const script of preparedScripts()) {
+    const avatar = script.role === 'idle' && script.playbackType === 'tts' && script.avatarLayerId
+      ? layers.value.find((layer) => layer.id === script.avatarLayerId)
+      : undefined;
+    if (!avatar || !isVideoAvatarSource(avatar)) continue;
+    script.playbackType = 'video';
+    script.mediaLayerId = avatar.id;
+    script.avatarLayerId = null;
+    script.speechText = '';
+    convertedAvatarVideo = true;
+  }
+  if (convertedAvatarVideo) syncPlaybackController();
+  // Assigning a source to automatic playback is an explicit request to run it.
+  if (!persistedScene.value.preparedScriptSettings.enabled) persistedScene.value.preparedScriptSettings.enabled = true;
+  if (playlistSnapshot.value.mode !== 'stopped') return;
   if (!preparedScripts().some((script) => script.enabled && script.role === 'idle')) return;
   playbackStart();
+}
+
+function isVideoAvatarSource(layer: StudioLayer): boolean {
+  return layer.kind === 'avatar'
+    && layer.source.type === 'media'
+    && Boolean(layer.source.mediaReferenceId)
+    && mediaReferences.value.some((reference) => reference.id === layer.source.mediaReferenceId && reference.kind === 'video');
 }
 
 function addPreparedScript(type: ProjectPreparedScript['playbackType'], mediaLayerId: string | null = null): void {
@@ -668,15 +690,21 @@ function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): v
   let script = preparedScripts().find((item) => item.mediaLayerId === layer.id || item.avatarLayerId === layer.id);
   if (!script) {
     if (layer.kind === 'avatar') {
-      addPreparedScript('tts');
+      addPreparedScript(isVideoAvatarSource(layer) ? 'video' : 'tts', isVideoAvatarSource(layer) ? layer.id : null);
       script = preparedScripts()[preparedScripts().length - 1];
-      if (script) script.avatarLayerId = layer.id;
+      if (script && !isVideoAvatarSource(layer)) script.avatarLayerId = layer.id;
     } else if (layer.kind === 'video' || layer.kind === 'audio') {
       addPreparedScript(layer.kind, layer.id);
       script = preparedScripts()[preparedScripts().length - 1];
     }
   }
   if (!script) return;
+  if (layer.kind === 'avatar' && role === 'idle' && isVideoAvatarSource(layer)) {
+    script.playbackType = 'video';
+    script.mediaLayerId = layer.id;
+    script.avatarLayerId = null;
+    script.speechText = '';
+  }
   script.role = role;
   script.name = `R${script.order + 1} - ${role === 'idle' ? 'Tự chạy' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'} - ${layer.name}`;
   if (role === 'idle') script.completionMode = 'resume-sequence';
@@ -1249,7 +1277,7 @@ function selectVoice(option: string): void {
       <div class="studio-grid">
         <div ref="scenePosterElement" class="scene-poster live-frame" :class="{ 'has-authored-scene': previewRenderableLayers.length > 0 }">
           <template v-for="layer in previewMediaLayers()" :key="`preview-media-${layer.id}`">
-            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id || playlistSnapshot.activeAudioLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="Math.max(playlistSnapshot.playbackRevision, avatarVideoSnapshot.revision)" :resume-playback="playlistSnapshot.resumeActiveMedia" :speech-managed="preparedScripts().some((script) => script.avatarLayerId === layer.id)" :speech-active="playlistSnapshot.activeAvatarLayerId === layer.id" :motion-controlled="layer.kind === 'avatar' && Boolean(layer.avatarMotion)" :motion-active="avatarVideoSnapshot.activeLayerId === layer.id || avatarVideoSnapshot.pendingLayerId === layer.id || avatarVideoSnapshot.previousLayerId === layer.id" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @motion-ready="avatarMotionReady" @motion-ended="avatarMotionEnded" @ended="(layerId) => playlistSnapshot.activeScriptId && layerId === playlistSnapshot.activeLayerId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
+            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id || playlistSnapshot.activeAudioLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="Math.max(playlistSnapshot.playbackRevision, avatarVideoSnapshot.revision)" :resume-playback="playlistSnapshot.resumeActiveMedia" :speech-managed="preparedScripts().some((script) => script.avatarLayerId === layer.id && script.playbackType === 'tts')" :speech-active="playlistSnapshot.activeAvatarLayerId === layer.id" :motion-controlled="layer.kind === 'avatar' && Boolean(layer.avatarMotion)" :motion-active="avatarVideoSnapshot.activeLayerId === layer.id || avatarVideoSnapshot.pendingLayerId === layer.id || avatarVideoSnapshot.previousLayerId === layer.id" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @motion-ready="avatarMotionReady" @motion-ended="avatarMotionEnded" @ended="(layerId) => playlistSnapshot.activeScriptId && layerId === playlistSnapshot.activeLayerId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
             <div v-else class="scene-runtime-layer scene-runtime-media" :data-media-kind="layer.kind" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="previewMediaSource(layer) ?? ''" :alt="layer.name" :style="{ objectFit: previewMediaObjectFit(layer) as 'contain' | 'cover' | 'fill' }" @load="capturePreviewMediaAspectRatio(layer.id, $event)" /></div>
           </template>
           <div v-if="!previewRenderableLayers.length" class="empty-frame"><strong>Khung live đang trống</strong><span>Thêm media có nguồn rõ ràng để bắt đầu.</span></div>

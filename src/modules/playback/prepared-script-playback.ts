@@ -161,7 +161,8 @@ export class PreparedScriptPlaybackController {
   private activate(script: ProjectPreparedScript, resumeActiveMedia = false): boolean {
     if (script.playbackType !== 'tts') {
       const layer = script.mediaLayerId ? this.layers.get(script.mediaLayerId) : undefined;
-      if (!layer || !layer.available || layer.kind !== script.playbackType) return this.fail(`Nguồn ${script.playbackType} của ${script.name} chưa sẵn sàng.`);
+      const isAvatarVideo = script.playbackType === 'video' && layer?.kind === 'avatar';
+      if (!layer || !layer.available || (layer.kind !== script.playbackType && !isAvatarVideo)) return this.fail(`Nguồn ${script.playbackType} của ${script.name} chưa sẵn sàng.`);
     }
     if (script.audioLayerId) {
       const audio = this.layers.get(script.audioLayerId);
