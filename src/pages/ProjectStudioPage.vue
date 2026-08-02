@@ -50,6 +50,7 @@ import StudioAssetBrowser from '../components/studio/StudioAssetBrowser.vue';
 import StudioInspectorSidebar from '../components/studio/StudioInspectorSidebar.vue';
 import StudioMixerFooter from '../components/studio/StudioMixerFooter.vue';
 import StudioPlaylistPanel from '../components/studio/StudioPlaylistPanel.vue';
+import StudioScriptComponents from '../components/studio/StudioScriptComponents.vue';
 import StudioSourcePanel from '../components/studio/StudioSourcePanel.vue';
 import StudioToolRail from '../components/studio/StudioToolRail.vue';
 import { useStudioPlayback } from '../composables/useStudioPlayback';
@@ -523,8 +524,8 @@ async function pickAudioForPreparedScript(scriptId: string): Promise<void> {
   notice.value = `Đã gán audio “${reference.label}” cho ${script.name}.`;
 }
 
-async function addAudioForActiveAvatar(): Promise<void> {
-  const source = activeLayer.value;
+async function addAudioForActiveAvatar(layerId?: string): Promise<void> {
+  const source = layerId ? layers.value.find((layer) => layer.id === layerId) : activeLayer.value;
   if (!source || !['video', 'audio', 'avatar'].includes(source.kind)) {
     notice.value = 'Chọn video, audio hoặc avatar trước khi nhập audio.';
     return;
@@ -557,8 +558,8 @@ async function addAudioForActiveAvatar(): Promise<void> {
   notice.value = `Đã thêm audio “${reference.label}” vào kịch bản của ${source.name}. Bấm Phát để chạy.`;
 }
 
-function assignActiveSourceToRole(role: PreparedScriptRole): void {
-  const layer = activeLayer.value;
+function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): void {
+  const layer = layerId ? layers.value.find((item) => item.id === layerId) : activeLayer.value;
   if (!layer || !['video', 'audio', 'avatar'].includes(layer.kind)) {
     notice.value = 'Chọn một layer video, audio hoặc avatar trước khi gán vào kịch bản.';
     return;
@@ -1129,6 +1130,8 @@ function selectVoice(option: string): void {
 
     <div class="studio-left-stack">
       <StudioAssetBrowser :active-tool="activeTool" @add-layer="addLayer" @add-local-image="addLocalImage" @add-local-video="addLocalVideo" @add-local-audio="addLocalAudio" @open-avatar-uploader="avatarLibraryOpen = true" />
+
+      <StudioScriptComponents :layers="layers" :scripts="preparedScripts()" :active-layer-id="activeLayer?.id ?? null" @select="selectLayer" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @edit="preparedScriptsOpen = true" />
 
       <StudioSourcePanel :layers="layers" :active-layer-index="activeLayerIndex" :primary-action="primaryAction" :source-display-name="sourceDisplayName" @add="addLayer()" @remove="removeLayer" @select="activeLayerIndex = $event" />
     </div>

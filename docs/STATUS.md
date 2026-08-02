@@ -945,3 +945,10 @@ Continue reducing the template-center mismatch with additional independently sou
 - Prepared playback schema v16 publishes a dedicated active audio layer. Studio preview and Scene Runtime start/stop the attached audio with its video, retain per-track mute/volume settings, and do not let an audio end event advance the video script.
 - Role transitions queue behind active activation/conversation speech and resume the idle script only after the spoken script ends, avoiding mid-sentence cuts. Only the script-selected avatar is visible at a time.
 - Validation: `pnpm typecheck`, focused ESLint, 46 focused Vitest assertions (including video + attached audio), `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), and `git diff --check` pass. Browser visual QA could not run because no Browser runtime is available; native Windows file-picker/OBS media evidence remains manual.
+
+## Session update - direct script component table
+
+- Added a persistent `Thanh phan kich ban` table in the left Studio column, directly below the source-library controls. It lists existing avatar, video, and audio layers as selectable script components.
+- Each component row selects the matching canvas layer and offers direct role assignment (`Cho`, `Kich hoat`, `Dang noi`). Video and avatar rows also expose `+ Audio`, avoiding the previous requirement to select the canvas before importing a voice track.
+- Timeline remains the playback surface; `Mo bang` opens full script properties only when detailed source/avatar settings are needed.
+- Validation: `pnpm typecheck`, focused ESLint, 44 focused Vitest assertions, and `git diff --check` pass. Rendered Browser QA remains blocked because no Browser runtime is available.
