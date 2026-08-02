@@ -25,7 +25,7 @@ function outputState(): string {
       <header><ListVideo :size="15" /><span>Timeline tự chạy</span><button type="button" class="timeline-edit-button" @click="emit('openPreparedScripts')">Chỉnh chi tiết</button></header>
       <div class="timeline-body timeline-program">
         <div class="timeline-program-row">
-          <div class="timeline-program-label"><strong>Hàng tự chạy</strong><small>{{ waitingScripts().length }} mục · phát tuần tự</small></div>
+          <div class="timeline-program-label"><strong>Hàng tự chạy</strong><small>{{ waitingScripts().length }} mục · phát tuần tự · lặp lại</small></div>
           <div class="timeline-track">
             <button v-for="(script, index) in waitingScripts()" :key="script.id" type="button" class="timeline-clip" :class="{ active: snapshot.activeScriptId === script.id, disabled: !script.enabled }" :disabled="!script.enabled"><b>{{ index + 1 }}</b><span>{{ script.name }}</span><small>{{ script.playbackType }} · tự chạy</small></button>
             <small v-if="!waitingScripts().length" class="timeline-empty">Chọn source rồi bấm “+ Hàng tự chạy”.</small>

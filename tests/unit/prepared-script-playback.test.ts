@@ -14,14 +14,14 @@ const settings = { enabled: true, scripts: [
 ] };
 
 describe('prepared script playback controller', () => {
-  it('plays only waiting scripts in sequence and ignores stale media callbacks', () => {
+  it('plays only waiting scripts in a repeating sequence and ignores stale media callbacks', () => {
     const controller = new PreparedScriptPlaybackController(); controller.configure(settings, layers);
     expect(controller.startSequence()).toBe(true);
     const revision = controller.snapshot().playbackRevision;
     expect(controller.onEnded('r1', revision - 1)).toBe(false);
     expect(controller.onReady('r1', revision)).toBe(true);
     expect(controller.onEnded('r1', revision)).toBe(true);
-    expect(controller.snapshot()).toMatchObject({ activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null });
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', activeLayerId: 'video-r1', activeAvatarLayerId: 'avatar-a' });
   });
 
   it('moves from one waiting video to the next instead of looping the first video', () => {
@@ -34,6 +34,18 @@ describe('prepared script playback controller', () => {
     const firstRevision = controller.snapshot().playbackRevision;
     controller.onEnded('r1', firstRevision);
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
+  });
+
+  it('returns to the first waiting video after the last waiting video ends', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [
+      settings.scripts[0]!,
+      { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 1, mediaLayerId: 'video-r2' },
+    ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
+    controller.startSequence();
+    controller.onEnded('r1', controller.snapshot().playbackRevision);
+    controller.onEnded('r4', controller.snapshot().playbackRevision);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', activeLayerId: 'video-r1' });
   });
 
   it('plays an uploaded video avatar as timeline video media', () => {

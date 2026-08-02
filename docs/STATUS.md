@@ -1032,3 +1032,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - video avatar timeline playback
 
 - Uploaded avatar MP4s assigned to `Hàng tự chạy` are now prepared as video clips rather than short mock TTS clips. Existing waiting avatar scripts are upgraded on the next automatic start, so Video 1 plays to its natural end before Video 2 starts.
+
+## Session update - repeating automatic timeline
+
+- `Hàng tự chạy` is now a continuous loop: it advances through every enabled clip in order, then returns to item 1 after the final clip until the operator presses `Dừng`.

@@ -155,6 +155,13 @@ export class PreparedScriptPlaybackController {
       const script = this.settings.scripts[index]!;
       if (script.enabled && (!role || script.role === role)) return this.activate(script);
     }
+    // The automatic timeline is a continuous background program. Once the
+    // last waiting clip ends, begin the waiting list again from its first clip.
+    if (role === 'idle' && this.sequenceActive) {
+      for (const script of this.settings.scripts) {
+        if (script.enabled && script.role === 'idle') return this.activate(script);
+      }
+    }
     this.sequenceActive = false;
     return this.stop();
   }
