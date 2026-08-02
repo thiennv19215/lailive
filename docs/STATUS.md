@@ -960,3 +960,8 @@ Continue reducing the template-center mismatch with additional independently sou
 - Studio and Browser Source keep the outgoing state visible until the target video is playable; both layers crossfade at the same geometry while avatar MP4 video stays muted. TTS and attached audio remain independently managed.
 - Operators assign each imported avatar MP4 a state in `Thanh phan kich ban`, then use the state controls in the left Studio column. The current script role also requests `idle` or `talk` motion automatically.
 - Validation: `pnpm typecheck`, focused ESLint, 48 focused assertions, `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK propagation=28ms visualDiff=1.99%`), and `git diff --check` pass.
+
+## Session update - timeline duplicate controls removed
+
+- Removed the repeated role label column and the redundant footer assignment actions from Timeline. Each lane now has one role button and its script clips; assignment remains in the left script-component table.
+- Validation: `pnpm typecheck`, focused ESLint, and `git diff --check` pass.
