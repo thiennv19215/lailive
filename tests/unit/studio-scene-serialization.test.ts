@@ -33,6 +33,8 @@ function preparePlainPresentation(
     activeLayerId: activeLayerId ? String(activeLayerId) : null,
     activeAudioLayerId: null,
     activeAvatarLayerId: null,
+    activeAvatarTransitionLayerId: null,
+    pendingAvatarLayerId: null,
     managedLayerIds: enabled ? playlistLayerIds.map((id) => String(id)) : [],
     playbackRevision: Number(playbackRevision),
     activePaused: mode !== 'idle',

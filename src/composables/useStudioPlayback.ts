@@ -4,10 +4,12 @@ import { playTtsResult } from '../modules/tts/playback';
 import type { ProjectMediaStatus, ProjectPreparedScript, PreparedScriptRole, ProjectSceneDocument, ProjectSceneLayer } from '../shared/contracts/projects';
 import type { ScenePresentationState } from '../shared/contracts/scene-runtime';
 import type { AvatarSpeechState } from '../shared/contracts/queue';
+import type { AvatarVideoSnapshot } from '../modules/playback/avatar-video-state-manager';
 
 type StudioPlaybackOptions = {
   scene: Ref<ProjectSceneDocument>; layers: Ref<ProjectSceneLayer[]>; mediaStatuses: Ref<ProjectMediaStatus[]>; projectLoaded: Ref<boolean>;
   avatarState: Ref<AvatarSpeechState>; buildSceneDocument: () => ProjectSceneDocument; onPublishError: (message: string) => void;
+  avatarVideo: Ref<AvatarVideoSnapshot>;
 };
 const EMPTY_SNAPSHOT: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
 
@@ -29,7 +31,8 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     const script = activeScript(current);
     const layer = script?.mediaLayerId ? options.layers.value.find((candidate) => candidate.id === script.mediaLayerId) : undefined;
     const audio = script?.audioLayerId ? options.layers.value.find((candidate) => candidate.id === script.audioLayerId) : undefined;
-    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: current.activeAvatarLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: current.playbackRevision, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: script?.role === 'idle' || layer?.loop === true, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
+    const motion = options.avatarVideo.value;
+    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAudioLayerId: current.activeAudioLayerId, activeAvatarLayerId: motion.activeLayerId ?? current.activeAvatarLayerId, activeAvatarTransitionLayerId: motion.previousLayerId, pendingAvatarLayerId: motion.pendingLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.audioLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: Math.max(current.playbackRevision, motion.revision), activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: script?.role === 'idle' || layer?.loop === true, activeAudioMuted: audio?.muted ?? true, activeAudioVolume: audio?.volume ?? 0 };
   }
   async function publish(current = snapshot.value): Promise<void> {
     if (!options.projectLoaded.value) return;

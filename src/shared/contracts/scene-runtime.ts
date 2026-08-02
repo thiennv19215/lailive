@@ -7,6 +7,8 @@ export interface ScenePresentationState {
   activeLayerId: string | null;
   activeAudioLayerId: string | null;
   activeAvatarLayerId: string | null;
+  activeAvatarTransitionLayerId: string | null;
+  pendingAvatarLayerId: string | null;
   managedLayerIds: string[];
   playbackRevision: number;
   activePaused: boolean;
@@ -18,7 +20,7 @@ export interface ScenePresentationState {
 }
 
 export function createDefaultScenePresentationState(): ScenePresentationState {
-  return { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
+  return { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
 }
 
 export interface SceneRuntimeState {

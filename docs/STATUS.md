@@ -952,3 +952,11 @@ Continue reducing the template-center mismatch with additional independently sou
 - Each component row selects the matching canvas layer and offers direct role assignment (`Cho`, `Kich hoat`, `Dang noi`). Video and avatar rows also expose `+ Audio`, avoiding the previous requirement to select the canvas before importing a voice track.
 - Timeline remains the playback surface; `Mo bang` opens full script properties only when detailed source/avatar settings are needed.
 - Validation: `pnpm typecheck`, focused ESLint, 44 focused Vitest assertions, and `git diff --check` pass. Rendered Browser QA remains blocked because no Browser runtime is available.
+
+## Session update - avatar MP4 state transition manager
+
+- Added schema v17 avatar motion assignments for `idle`, `talk`, `point-product`, `point-cart`, `listen`, `thank`, and `wave`. Existing projects without an assignment migrate safely to `null`.
+- Added `AvatarVideoStateManager`: one active state, preload/ready gate, a priority queue, duplicate-request suppression, 300ms crossfade, action completion back to idle, and safe failure when the target state has no MP4.
+- Studio and Browser Source keep the outgoing state visible until the target video is playable; both layers crossfade at the same geometry while avatar MP4 video stays muted. TTS and attached audio remain independently managed.
+- Operators assign each imported avatar MP4 a state in `Thanh phan kich ban`, then use the state controls in the left Studio column. The current script role also requests `idle` or `talk` motion automatically.
+- Validation: `pnpm typecheck`, focused ESLint, 48 focused assertions, `pnpm test:electron-smoke` (`PHASE0_SMOKE_OK`), `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK propagation=28ms visualDiff=1.99%`), and `git diff --check` pass.

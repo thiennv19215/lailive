@@ -16,11 +16,15 @@ const props = defineProps<{
   playbackRevision?: number;
   speechManaged?: boolean;
   speechActive?: boolean;
+  motionControlled?: boolean;
+  motionActive?: boolean;
 }>();
 const emit = defineEmits<{
   ended: [layerId: string, playbackRevision: number];
   ready: [layerId: string, playbackRevision: number];
   error: [layerId: string, playbackRevision: number, message: string];
+  motionReady: [layerId: string];
+  motionEnded: [layerId: string];
 }>();
 
 const rootElement = ref<HTMLElement | null>(null);
@@ -40,7 +44,7 @@ function syncMediaPlayback(): void {
   if (!media) return;
   media.volume = props.layer.volume;
   media.muted = props.layer.muted;
-  if (props.speechManaged) {
+  if (props.speechManaged && !props.motionControlled) {
     media.loop = true;
     if (!props.speechActive) {
       media.pause();
@@ -49,6 +53,13 @@ function syncMediaPlayback(): void {
     }
     if (!previousSpeechActive && media.readyState > 0) media.currentTime = 0;
     previousSpeechActive = true;
+    void media.play().catch(() => undefined);
+    return;
+  }
+  if (props.motionControlled) {
+    media.loop = props.layer.avatarMotion === 'idle';
+    if (!props.motionActive) { media.pause(); return; }
+    if (appliedPlaybackRevision !== (props.playbackRevision ?? 0)) { appliedPlaybackRevision = props.playbackRevision ?? 0; if (media.readyState > 0) media.currentTime = 0; }
     void media.play().catch(() => undefined);
     return;
   }
@@ -74,6 +85,7 @@ function handleMediaReady(): void {
   refreshChromaRenderer();
   syncMediaPlayback();
   if (props.playbackManaged && props.playbackActive) emit('ready', props.layer.id, props.playbackRevision ?? 0);
+  if (props.motionControlled && props.motionActive) emit('motionReady', props.layer.id);
 }
 
 function handleMediaError(): void {
@@ -82,6 +94,7 @@ function handleMediaError(): void {
 
 function handleVideoEnded(): void {
   if (props.playbackManaged && props.playbackActive) emit('ended', props.layer.id, props.playbackRevision ?? 0);
+  if (props.motionControlled && props.motionActive) emit('motionEnded', props.layer.id);
 }
 
 function cancelRenderLoop(): void {
@@ -140,7 +153,7 @@ watch(() => [
   props.layer.chromaKey.tolerance,
   props.layer.fitMode,
 ], refreshChromaRenderer);
-watch(() => [props.playbackManaged, props.playbackActive, props.playbackPaused, props.playbackRevision, props.speechManaged, props.speechActive, props.layer.loop, props.layer.muted, props.layer.volume], syncMediaPlayback);
+watch(() => [props.playbackManaged, props.playbackActive, props.playbackPaused, props.playbackRevision, props.speechManaged, props.speechActive, props.motionControlled, props.motionActive, props.layer.loop, props.layer.muted, props.layer.volume], syncMediaPlayback);
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(refreshChromaRenderer);

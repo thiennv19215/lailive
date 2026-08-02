@@ -1,4 +1,4 @@
-export const PROJECT_SCHEMA_VERSION = 16 as const;
+export const PROJECT_SCHEMA_VERSION = 17 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -86,6 +86,7 @@ export interface ProjectManualPlaybackSettings {
 
 export type PreparedScriptPlaybackType = 'video' | 'audio' | 'tts';
 export type PreparedScriptRole = 'idle' | 'activation' | 'conversation';
+export type AvatarVideoState = 'idle' | 'talk' | 'point-product' | 'point-cart' | 'listen' | 'thank' | 'wave';
 export type PreparedScriptInterruptMode = 'immediate' | 'after-current';
 export type PreparedScriptCompletionMode = 'stop' | 'next' | 'resume-sequence';
 
@@ -124,6 +125,8 @@ export interface ProjectSceneLayer {
   muted: boolean;
   volume: number;
   avatarState: 'none' | 'idle' | 'talking';
+  // Identifies which pre-rendered motion this avatar MP4 represents.
+  avatarMotion: AvatarVideoState | null;
   chromaKey: {
     enabled: boolean;
     color: string;
@@ -250,6 +253,7 @@ export function createProjectSceneLayer(
     muted: kind === 'video',
     volume: 1,
     avatarState: kind === 'avatar' ? 'idle' : 'none',
+    avatarMotion: kind === 'avatar' ? 'idle' : null,
     chromaKey: { enabled: false, color: '#00ff00', tolerance: 24 },
     source: { ...source },
   };
