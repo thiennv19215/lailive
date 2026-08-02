@@ -40,7 +40,7 @@ import {
   type LayerTransform,
   type ResizeHandle,
 } from '../shared/studio/layer-transform';
-import { fitContainedPreviewBox, isPreviewRenderable, previewLayerBox, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
+import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, previewLayerBox, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
 import { ensureUniqueLayerIds } from '../shared/studio/layer-identity';
 import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type AvatarVideoState, type ProjectMediaReference, type ProjectMediaStatus, type PreparedScriptRole, type ProjectPreparedScript, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
 import type { ObsConfigInput, ObsStatus } from '../shared/contracts/obs';
@@ -268,13 +268,15 @@ const activeSelectionBox = computed(() => {
 const selectionStyle = computed(() => {
   const box = activeSelectionBox.value;
   const transform = activeTransform.value;
+  const index = activeLayer.value ? layers.value.indexOf(activeLayer.value) : 0;
+  const layerZIndex = (activeLayer.value?.kind === 'avatar' ? 2000 : 1000) - Math.max(0, index);
   return {
     left: `${box.left}%`,
     top: `${box.top}%`,
     width: `${box.width}%`,
     height: `${box.height}%`,
-    // Keep transform controls above foreground avatars and their hit targets.
-    zIndex: '3000',
+    // Keep controls above the selected layer, but below layouts rendered in front of it.
+    zIndex: String(layerZIndex + 1),
     transform: `translate(${(transform.x / box.width) * 100}%, ${(transform.y / box.height) * 100}%) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`,
   };
 });
@@ -715,16 +717,21 @@ function previewMediaSource(layer: StudioLayer): string | null {
 }
 
 function previewMediaObjectFit(layer: StudioLayer): string {
-  return layer.fitMode;
+  return isDefaultBackgroundLayer(layer) ? 'cover' : layer.fitMode;
+}
+
+function storePreviewMediaAspectRatio(layerId: string, aspectRatio: number): void {
+  if (aspectRatio <= 0) return;
+  previewMediaAspectRatios.value = {
+    ...previewMediaAspectRatios.value,
+    [layerId]: aspectRatio,
+  };
 }
 
 function capturePreviewMediaAspectRatio(layerId: string, event: Event): void {
   const image = event.currentTarget as HTMLImageElement;
   if (image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
-  previewMediaAspectRatios.value = {
-    ...previewMediaAspectRatios.value,
-    [layerId]: image.naturalWidth / image.naturalHeight,
-  };
+  storePreviewMediaAspectRatio(layerId, image.naturalWidth / image.naturalHeight);
 }
 
 function previewMediaLayers(): StudioLayer[] {
@@ -1240,7 +1247,7 @@ function selectVoice(option: string): void {
       <div class="studio-grid">
         <div ref="scenePosterElement" class="scene-poster live-frame" :class="{ 'has-authored-scene': previewRenderableLayers.length > 0 }">
           <template v-for="layer in previewMediaLayers()" :key="`preview-media-${layer.id}`">
-            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id || playlistSnapshot.activeAudioLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="Math.max(playlistSnapshot.playbackRevision, avatarVideoSnapshot.revision)" :resume-playback="playlistSnapshot.resumeActiveMedia" :speech-managed="preparedScripts().some((script) => script.avatarLayerId === layer.id && script.playbackType === 'tts')" :speech-active="playlistSnapshot.activeAvatarLayerId === layer.id" :motion-controlled="layer.kind === 'avatar' && Boolean(layer.avatarMotion)" :motion-active="avatarVideoSnapshot.activeLayerId === layer.id || avatarVideoSnapshot.pendingLayerId === layer.id || avatarVideoSnapshot.previousLayerId === layer.id" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @motion-ready="avatarMotionReady" @motion-ended="avatarMotionEnded" @ended="(layerId) => playlistSnapshot.activeScriptId && layerId === playlistSnapshot.activeLayerId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
+            <SceneMediaLayer v-if="previewUsesVideo(layer) || layer.kind === 'audio'" :layer="layer" :media-kind="layer.kind === 'audio' ? 'audio' : 'video'" :source-url="(layer.kind === 'audio' ? audioSources[layer.source.mediaReferenceId!] : (previewMediaSource(layer) ?? videoSources[layer.source.mediaReferenceId!])) ?? ''" :render-style="previewLayerHitStyle(layer, layers.indexOf(layer))" :selected="activeLayer?.id === layer.id" :playback-managed="preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id)" :playback-active="playlistSnapshot.activeLayerId === layer.id || playlistSnapshot.activeAudioLayerId === layer.id" :playback-paused="playlistSnapshot.mode === 'paused' || playlistSnapshot.mode === 'stopped' || playlistSnapshot.mode === 'error'" :playback-revision="Math.max(playlistSnapshot.playbackRevision, avatarVideoSnapshot.revision)" :resume-playback="playlistSnapshot.resumeActiveMedia" :speech-managed="preparedScripts().some((script) => script.avatarLayerId === layer.id && script.playbackType === 'tts')" :speech-active="playlistSnapshot.activeAvatarLayerId === layer.id" :motion-controlled="layer.kind === 'avatar' && Boolean(layer.avatarMotion)" :motion-active="avatarVideoSnapshot.activeLayerId === layer.id || avatarVideoSnapshot.pendingLayerId === layer.id || avatarVideoSnapshot.previousLayerId === layer.id" @ready="() => playlistSnapshot.activeScriptId && playbackReady(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @dimensions="storePreviewMediaAspectRatio" @motion-ready="avatarMotionReady" @motion-ended="avatarMotionEnded" @ended="(layerId) => playlistSnapshot.activeScriptId && layerId === playlistSnapshot.activeLayerId && playbackEnded(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision)" @error="(_layerId, _revision, message) => playlistSnapshot.activeScriptId && playbackError(playlistSnapshot.activeScriptId, playlistSnapshot.playbackRevision, message)" @pointerdown.stop="selectLayer(layer.id)" />
             <div v-else class="scene-runtime-layer scene-runtime-media" :data-media-kind="layer.kind" :style="previewLayerHitStyle(layer, layers.indexOf(layer))" @pointerdown.stop="selectLayer(layer.id)"><img class="scene-runtime-media-source" :src="previewMediaSource(layer) ?? ''" :alt="layer.name" :style="{ objectFit: previewMediaObjectFit(layer) as 'contain' | 'cover' | 'fill' }" @load="capturePreviewMediaAspectRatio(layer.id, $event)" /></div>
           </template>
           <div v-if="!previewRenderableLayers.length" class="empty-frame"><strong>Khung live đang trống</strong><span>Thêm media có nguồn rõ ràng để bắt đầu.</span></div>

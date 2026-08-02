@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createProjectSceneLayer } from '../../src/shared/contracts/projects';
-import { fitContainedPreviewBox, isPreviewRenderable, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
+import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, previewLayerBox, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
 
 describe('Studio preview source and geometry', () => {
   it('does not render implicit name-based or empty sources', () => {
@@ -39,6 +39,14 @@ describe('Studio preview source and geometry', () => {
       1.5,
       9 / 16,
     )).toEqual({ left: 0, top: 31.25, width: 100, height: 37.5 });
+  });
+
+  it('keeps default background assets full-canvas regardless of source ordering', () => {
+    const background = createProjectSceneLayer('background', 'Hinh nen', 'image', { type: 'builtin', assetId: 'beauty-cream', mediaReferenceId: null });
+
+    expect(isDefaultBackgroundLayer(background)).toBe(true);
+    expect(previewLayerBox(background, 4)).toEqual({ left: 0, top: 0, width: 100, height: 100 });
+    expect(previewLayerStyle(background, 5, 4)).toMatchObject({ left: '0%', top: '0%', width: '100%', height: '100%' });
   });
 
   it('renders lower array indexes above later layers', () => {

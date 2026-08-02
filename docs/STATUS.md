@@ -1062,3 +1062,24 @@ Continue reducing the template-center mismatch with additional independently sou
 
 - Simplified the detailed Script dialog to just the playback lane, video source, and optional attached local audio for each R item. The unused avatar and TTS text fields are hidden until that workflow is developed.
 - Fixed the dialog content region so its script list scrolls inside the dialog instead of extending beneath its header and controls.
+
+## Session update - P1 test gate repair
+
+- Updated the database lifecycle assertion for the persisted playlist role that schema hydration now supplies.
+- Vitest and ESLint now exclude local `.claude` worktrees, so workspace gates do not run duplicate agent copies of the repository.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, focused database integration tests (7/7), and full `pnpm test` (35 files, 181 tests).
+
+## Session update - full-canvas default backgrounds
+
+- Built-in default backgrounds now always use the complete scene rectangle and `cover` fit in both the Studio preview and loopback Browser Source, regardless of their source-list position.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, and focused Studio preview/Scene Runtime tests (14/14). Browser QA confirms the Studio route renders with no console warnings or errors.
+
+## Session update - canvas layout selection layering
+
+- The active transform frame now sits one layer above its selected source instead of above the entire canvas. Foreground layouts therefore receive pointer input before a selected full-canvas background frame.
+- In-app Browser QA clicked a visible overlapping video layout and selected `Video hoa 13`; its transform frame matched the video bounds at z-index 988, with no console warnings or errors.
+
+## Session update - media-bounded selection frames
+
+- Video layers now report their intrinsic aspect ratio to Studio after loading. A `contain` selection frame uses that real ratio rather than a larger assumed layout box.
+- Validation passes: `pnpm typecheck`, `pnpm lint`, and focused Studio preview tests (8/8). Browser QA selected `Video hoa 13`; the selection and rendered layer bounds were identical, with no console warnings or errors.

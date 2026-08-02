@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import electron from 'vite-plugin-electron/simple';
 
@@ -34,5 +35,9 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+  },
+  test: {
+    // Local agent worktrees can contain their own tests, but are not this workspace's suite.
+    exclude: [...configDefaults.exclude, '**/.claude/**'],
   },
 });

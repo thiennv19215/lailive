@@ -23,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   ended: [layerId: string, playbackRevision: number];
   ready: [layerId: string, playbackRevision: number];
+  dimensions: [layerId: string, aspectRatio: number];
   error: [layerId: string, playbackRevision: number, message: string];
   motionReady: [layerId: string];
   motionEnded: [layerId: string];
@@ -83,6 +84,10 @@ function syncMediaPlayback(): void {
 }
 
 function handleMediaReady(): void {
+  const video = videoElement.value;
+  if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+    emit('dimensions', props.layer.id, video.videoWidth / video.videoHeight);
+  }
   refreshChromaRenderer();
   syncMediaPlayback();
   if (props.playbackManaged && props.playbackActive) emit('ready', props.layer.id, props.playbackRevision ?? 0);

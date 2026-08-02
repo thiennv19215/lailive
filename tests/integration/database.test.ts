@@ -77,7 +77,7 @@ describe('SettingsDatabase', () => {
     expect(second.getProject(created.id)?.scene.imageSettings.radius).toBe(24);
     expect(second.getProject(created.id)?.scene.avatarSettings.scripts).toEqual(['Persisted avatar script']);
     expect(second.getProject(created.id)?.scene.livestreamSettings.tiktokUsername).toBe('studio_test');
-    expect(second.getProject(created.id)?.scene.manualPlaybackSettings).toEqual({ enabled: true, playlist: [{ layerId: 'video-idle', enabled: true }, { layerId: 'audio-reply', enabled: true }] });
+    expect(second.getProject(created.id)?.scene.manualPlaybackSettings).toEqual({ enabled: true, playlist: [{ layerId: 'video-idle', enabled: true, role: 'idle' }, { layerId: 'audio-reply', enabled: true, role: 'idle' }] });
     expect(second.getProject(created.id)?.scene.layers.find((layer) => layer.id === 'audio-reply')).toMatchObject({ kind: 'audio', volume: 0.65 });
     expect(second.getProject(created.id)?.scene.mediaReferences[0]?.id).toBe('media-avatar');
     expect(second.getProject(created.id)?.scene.textStyle.content).toBe('Đã tự động lưu');

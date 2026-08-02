@@ -50,6 +50,12 @@ function isRenderable(layer) {
   return layer.source.type === 'builtin' ? Boolean(layer.source.assetId) : layer.source.type === 'media' && Boolean(layer.source.mediaReferenceId);
 }
 
+function isDefaultBackgroundLayer(layer) {
+  return layer.kind === 'image'
+    && layer.source.type === 'builtin'
+    && ['beauty-studio', 'beauty-cream', 'background-white-clean', 'background-white-warm', 'background-white-studio'].includes(layer.source.assetId);
+}
+
 function createLayerNode(layer, state) {
   const root = document.createElement(layer.kind === 'text' ? 'div' : 'section');
   root.className = layer.kind === 'text' ? 'runtime-layer runtime-text' : 'runtime-layer runtime-media';
@@ -87,6 +93,7 @@ function createLayerNode(layer, state) {
 
 function layerBox(layer, imageIndex) {
   if (layer.kind === 'audio') return { left: 0, top: 0, width: 0.1, height: 0.1 };
+  if (isDefaultBackgroundLayer(layer)) return { left: 0, top: 0, width: 100, height: 100 };
   if (layer.kind === 'text') return { left: 8, top: 7, width: 84, height: 18 };
   if (layer.kind === 'video' || layer.kind === 'gif') return { left: 10, top: 30, width: 80, height: 30 };
   if (layer.kind === 'avatar') return { left: 42, top: 25, width: 54, height: 72 };
@@ -128,7 +135,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
   } else {
     const media = root.querySelector('[data-media="source"]');
     if (media) {
-      media.style.objectFit = layer.fitMode;
+      media.style.objectFit = isDefaultBackgroundLayer(layer) ? 'cover' : layer.fitMode;
       media.style.borderRadius = layer.kind === 'image' ? `${state.scene.imageSettings.radius}px` : '0';
       if (media instanceof HTMLMediaElement) {
         const active = managed && (presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
