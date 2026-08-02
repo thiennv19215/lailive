@@ -1,4 +1,4 @@
-export const PROJECT_SCHEMA_VERSION = 13 as const;
+export const PROJECT_SCHEMA_VERSION = 14 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -14,7 +14,11 @@ export type ProjectLayerAssetId =
   | 'background-white-warm'
   | 'background-white-studio'
   | 'flower-video'
-  | 'flower-gif';
+  | 'flower-gif'
+  | 'sticker-freeship'
+  | 'sticker-hot-deal'
+  | 'sticker-live-only'
+  | 'sticker-sale-50';
 export type ProjectMediaKind = 'image' | 'video' | 'audio';
 export type ProjectTriggerEvent = 'chat' | 'gift' | 'like' | 'follow' | 'share';
 
@@ -91,6 +95,8 @@ export interface ProjectPreparedScript {
   order: number;
   playbackType: PreparedScriptPlaybackType;
   mediaLayerId: string | null;
+  // The VAS can show one assigned avatar for a script, independently of its audio/video source.
+  avatarLayerId: string | null;
   speechText: string;
   interruptMode: PreparedScriptInterruptMode;
   completionMode: PreparedScriptCompletionMode;

@@ -31,7 +31,10 @@ const emit = defineEmits<{
   captureImageEdit: [];
   captureTextEdit: [];
   commitImageEdit: [];
+  addAvatarAudio: [];
   editAvatar: [];
+  openPreparedScripts: [];
+  playAvatarIdle: [];
   setAvatarLayerState: [state: 'idle' | 'talking'];
   setAvatarPreviewState: [state: 'idle' | 'talking'];
   finishTextEdit: [];
@@ -77,12 +80,12 @@ watch(() => props.focusTextRequest, async () => {
     <section v-else-if="activeLayerKind === 'avatar'" class="avatar-script-panel">
       <header><strong>Avatar & chuyển động</strong><div class="inspector-history"><button type="button" aria-label="Hoàn tác lớp" :disabled="!avatarHistoryPastCount" @click="emit('undoInspector')">↶</button><button type="button" aria-label="Làm lại lớp" :disabled="!avatarHistoryFutureCount" @click="emit('redoInspector')">↷</button></div></header>
       <div class="avatar-motion-controls">
-        <p>1. Gán video đang chọn · 2. Bấm xem ngay trong khung.</p>
+        <p><b>Chờ</b> là video/GIF lặp khi chưa có lời thoại. Muốn có tiếng, thêm audio vào kịch bản của avatar này rồi phát kịch bản.</p>
         <strong>Video này là</strong>
         <div><button type="button" :class="{ active: activeAvatarState === 'idle' }" @click="emit('setAvatarLayerState', 'idle')">Chờ</button><button type="button" :class="{ active: activeAvatarState === 'talking' }" @click="emit('setAvatarLayerState', 'talking')">Đang nói</button></div>
-        <strong>Xem trước trong khung</strong>
-        <div><button type="button" :class="{ active: avatarPreviewState === 'idle' }" @click="emit('setAvatarPreviewState', 'idle')">▶ Chờ</button><button type="button" :class="{ active: avatarPreviewState === 'talking' }" @click="emit('setAvatarPreviewState', 'talking')">▶ Đang nói</button></div>
-        <button type="button" class="avatar-script-edit" @click="emit('editAvatar')">Soạn kịch bản sau</button>
+        <button type="button" class="avatar-preview-play" @click="emit('playAvatarIdle')">Phát xem trước video chờ</button>
+        <button type="button" class="avatar-audio-add" @click="emit('addAvatarAudio')">+ Thêm audio cho avatar này</button>
+        <button type="button" class="avatar-script-edit" @click="emit('openPreparedScripts')">Mở kịch bản & phát</button>
       </div>
     </section>
     <section v-else class="interaction-panel">

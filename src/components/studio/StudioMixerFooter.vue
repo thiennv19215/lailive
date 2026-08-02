@@ -9,6 +9,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   export: [];
+  addAudio: [];
   settings: [];
   start: [];
   connectObs: [];
@@ -26,8 +27,8 @@ function outputState(): string {
 <template>
   <section class="studio-mixer-footer">
     <section class="mixer-panel">
-      <header><Mic2 :size="15" /><span>Nguồn âm thanh</span></header>
-      <div>Âm thanh từ video/audio trong scene sẽ được chuyển sang Browser Source.</div>
+      <header><Mic2 :size="15" /><span>Nguồn âm thanh</span><button type="button" class="audio-import-button" @click="emit('addAudio')">+ Thêm file audio</button></header>
+      <div>Nhấn “Thêm file audio” để chọn MP3, WAV, M4A hoặc OGG từ máy.</div>
     </section>
     <section class="mixer-panel output">
       <header>

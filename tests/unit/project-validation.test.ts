@@ -122,6 +122,19 @@ describe('project validation', () => {
     expect(projectSceneLayerSchema.safeParse({ ...migrated.layers[0], volume: 1.1 }).success).toBe(false);
   });
 
+  it('preserves v13 prepared scripts and leaves their new avatar assignment empty', () => {
+    const legacy = createEmptyScene();
+    const migrated = migrateProjectScene({
+      ...legacy,
+      schemaVersion: 13,
+      preparedScriptSettings: {
+        enabled: true,
+        scripts: [{ id: 'r1', name: 'R1', enabled: true, order: 0, playbackType: 'tts', mediaLayerId: null, speechText: 'Xin chao', interruptMode: 'immediate', completionMode: 'stop' }],
+      },
+    });
+    expect(migrated.preparedScriptSettings.scripts).toEqual([expect.objectContaining({ id: 'r1', avatarLayerId: null })]);
+  });
+
   it('accepts controlled built-in layer sources and rejects mismatched source fields', () => {
     const layer = migrateProjectScene({
       ...createEmptyScene(),

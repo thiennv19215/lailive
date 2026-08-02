@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 180">
+  <rect width="480" height="180" rx="38" fill="#1677ff"/>
+  <path d="M58 52h105l20 38h58v45H58z" fill="#fff"/><path d="M86 135a19 19 0 1 0 0 1m114-1a19 19 0 1 0 0 1" fill="none" stroke="#1677ff" stroke-width="15"/>
+  <text x="265" y="112" fill="#fff" font-family="Arial,sans-serif" font-size="48" font-weight="800">FREESHIP</text>
+</svg>

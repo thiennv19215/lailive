@@ -20,6 +20,7 @@ const BUILTIN_ASSETS = new Set<NonNullable<ProjectSceneLayer['source']['assetId'
   'template-host', 'beauty-model', 'beauty-studio', 'beauty-cream',
   'background-white-clean', 'background-white-warm', 'background-white-studio',
   'flower-video', 'flower-gif',
+  'sticker-freeship', 'sticker-hot-deal', 'sticker-live-only', 'sticker-sale-50',
 ]);
 
 export function resolvePreviewSource(layer: ProjectSceneLayer, loadedMediaIds: ReadonlySet<string> = new Set()): PreviewSource | null {

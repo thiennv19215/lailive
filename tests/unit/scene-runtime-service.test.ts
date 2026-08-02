@@ -15,6 +15,10 @@ const assetFiles: Record<ProjectLayerAssetId, string> = {
   'background-white-studio': path.resolve('src/assets/defaults/background-white-studio.svg'),
   'flower-video': path.resolve('src/assets/mock/flower.mp4'),
   'flower-gif': path.resolve('src/assets/mock/flower.gif'),
+  'sticker-freeship': path.resolve('src/assets/defaults/sticker-freeship.svg'),
+  'sticker-hot-deal': path.resolve('src/assets/defaults/sticker-hot-deal.svg'),
+  'sticker-live-only': path.resolve('src/assets/defaults/sticker-live-only.svg'),
+  'sticker-sale-50': path.resolve('src/assets/defaults/sticker-sale-50.svg'),
 };
 const temporaryDirectories: string[] = [];
 

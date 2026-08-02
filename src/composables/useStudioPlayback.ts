@@ -9,7 +9,7 @@ type StudioPlaybackOptions = {
   scene: Ref<ProjectSceneDocument>; layers: Ref<ProjectSceneLayer[]>; mediaStatuses: Ref<ProjectMediaStatus[]>; projectLoaded: Ref<boolean>;
   avatarState: Ref<AvatarSpeechState>; buildSceneDocument: () => ProjectSceneDocument; onPublishError: (message: string) => void;
 };
-const EMPTY_SNAPSHOT: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
+const EMPTY_SNAPSHOT: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
 
 export function useStudioPlayback(options: StudioPlaybackOptions) {
   const snapshot = ref<PreparedScriptPlaybackSnapshot>(EMPTY_SNAPSHOT);
@@ -22,13 +22,13 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
 
   function sync(): void {
     controller.configure(options.scene.value.preparedScriptSettings, options.layers.value
-      .filter((layer) => layer.kind === 'video' || layer.kind === 'audio')
+      .filter((layer) => layer.kind === 'video' || layer.kind === 'audio' || layer.kind === 'avatar')
       .map((layer) => ({ id: layer.id, kind: layer.kind, loop: layer.loop, muted: layer.muted, volume: layer.volume, available: layer.source.type === 'builtin' || options.mediaStatuses.value.find((status) => status.id === layer.source.mediaReferenceId)?.exists !== false })));
   }
   function presentation(current: PreparedScriptPlaybackSnapshot): ScenePresentationState {
     const script = activeScript(current);
     const layer = script?.mediaLayerId ? options.layers.value.find((candidate) => candidate.id === script.mediaLayerId) : undefined;
-    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, managedLayerIds: scripts().flatMap((item) => item.mediaLayerId ? [item.mediaLayerId] : []), playbackRevision: current.playbackRevision, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: layer?.loop ?? false };
+    return { mode: current.mode, activeScriptId: current.activeScriptId, activeLayerId: current.activeLayerId, activeAvatarLayerId: current.activeAvatarLayerId, managedLayerIds: scripts().flatMap((item) => [item.mediaLayerId, item.avatarLayerId].filter((id): id is string => Boolean(id))), playbackRevision: current.playbackRevision, activePaused: current.mode === 'paused' || current.mode === 'stopped' || current.mode === 'error', activeMuted: layer?.muted ?? true, activeVolume: layer?.volume ?? 0, activeLoop: layer?.loop ?? false };
   }
   async function publish(current = snapshot.value): Promise<void> {
     if (!options.projectLoaded.value) return;
@@ -42,7 +42,7 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     if (scripts().length >= 20) return options.onPublishError('Kịch bản chờ đã đủ 20 mục.');
     const order = scripts().length;
     const layer = mediaLayerId ? options.layers.value.find((candidate) => candidate.id === mediaLayerId) : undefined;
-    scripts().push({ id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? 'Thoại chờ'}`, enabled: true, order, playbackType: type, mediaLayerId, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: 'immediate', completionMode: 'next' });
+    scripts().push({ id: `script-${globalThis.crypto.randomUUID()}`, name: `R${order + 1} - ${layer?.name ?? 'Thoại chờ'}`, enabled: true, order, playbackType: type, mediaLayerId, avatarLayerId: null, speechText: type === 'tts' ? 'Xin chào, cảm ơn bạn đã chờ.' : '', interruptMode: 'immediate', completionMode: 'next' });
     sync();
   }
   function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }

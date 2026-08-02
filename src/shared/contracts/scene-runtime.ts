@@ -5,6 +5,7 @@ export interface ScenePresentationState {
   mode: 'scene' | 'stopped' | 'starting' | 'idle' | 'playing' | 'paused' | 'loading' | 'recovering' | 'error';
   activeScriptId: string | null;
   activeLayerId: string | null;
+  activeAvatarLayerId: string | null;
   managedLayerIds: string[];
   playbackRevision: number;
   activePaused: boolean;
@@ -14,7 +15,7 @@ export interface ScenePresentationState {
 }
 
 export function createDefaultScenePresentationState(): ScenePresentationState {
-  return { mode: 'scene', activeScriptId: null, activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
+  return { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
 }
 
 export interface SceneRuntimeState {

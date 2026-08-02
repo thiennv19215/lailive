@@ -2,6 +2,30 @@
 
 Updated: 2026-08-01
 
+## Session update - avatar-to-audio script workflow
+
+- Reworked the selected-avatar inspector around the operator flow: `Phát xem trước video chờ` previews the assigned idle video/GIF, while `+ Thêm audio cho avatar này` opens the native picker, creates an audio source, creates a prepared script, and preassigns that exact avatar to it.
+- `Mở kịch bản & phát` now opens an accessible modal instead of relying on the hidden overflow panel. Each script row shows its avatar/audio/TTS assignment and its own `Phát` control, so the operator can clearly run the audio-avatar pair.
+- Validation passes: focused Studio ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
+## Session update - visible audio import
+
+- Added a prominent orange `+ Thêm file audio` button in the always-visible `Nguồn âm thanh` footer, alongside explicit MP3/WAV/M4A/OGG guidance. It invokes the native local-file picker and adds the audio to the scene.
+- Validation passes: focused Studio ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
+## Session update - direct prepared-script audio import
+
+- Audio scripts now include `Chọn file audio` directly beside their source selector. The native picker imports the selected file, creates its controlled local audio layer, assigns it to that exact script, reloads media status, and persists through the existing autosave path.
+- Operators no longer need to add an audio source elsewhere before configuring a script; select `Thoại file`, then choose the audio file in the same script card.
+- Validation passes: focused Studio ESLint, `corepack pnpm typecheck`, and `git diff --check`.
+
+## Session update - single-avatar VAS scripts
+
+- Prepared scripts now persist an optional `avatarLayerId`, and the Studio lets each video, audio, or TTS script choose one `Avatar VAS`. Avatar uploads accept video or image/GIF media, so animated GIF avatars work through the existing controlled media path.
+- The playback controller publishes `activeAvatarLayerId` separately from the script's audio/video source. On start, switch, completion, error, or stop, Scene Runtime and Browser Source hide every other script-managed avatar; therefore only the active script's one avatar can run in the VAS frame.
+- Project schema v14 migrates v13 prepared scripts without data loss by assigning `avatarLayerId: null`. Validation rejects an avatar assignment that does not point to an avatar layer.
+- Validation passes: focused ESLint, `corepack pnpm typecheck`, 43 focused tests (including prepared-script transitions and v13 migration), and `git diff --check`.
+
 ## Session update - direct avatar preview controls
 
 - Added compact `Chờ` and `Đang nói` controls inside the Studio canvas, plus the same prominent controls in the Avatar inspector. Selecting an avatar source now makes it clear whether that file is the idle or talking clip, and either preview button switches the canvas and publishes the state to the loopback Scene Runtime.

@@ -53,6 +53,10 @@ export const projectSceneLayerSchema = z.object({
       'background-white-studio',
       'flower-video',
       'flower-gif',
+      'sticker-freeship',
+      'sticker-hot-deal',
+      'sticker-live-only',
+      'sticker-sale-50',
     ]).nullable(),
     mediaReferenceId: projectIdSchema.nullable(),
   }).refine((source) => (
@@ -129,6 +133,7 @@ export const projectPreparedScriptSchema = z.object({
   order: z.number().int().min(0).max(19),
   playbackType: z.enum(['video', 'audio', 'tts']),
   mediaLayerId: projectIdSchema.nullable(),
+  avatarLayerId: projectIdSchema.nullable(),
   speechText: z.string().trim().max(5_000),
   interruptMode: z.enum(['immediate', 'after-current']),
   completionMode: z.enum(['stop', 'next', 'resume-sequence']),
@@ -174,7 +179,13 @@ export const projectSceneSchema = z.object({
     ? scene.width === 1080 && scene.height === 1920
     : scene.width === 1920 && scene.height === 1080,
   'Canvas dimensions must match the selected preset.',
-);
+).superRefine((scene, context) => {
+  scene.preparedScriptSettings.scripts.forEach((script, index) => {
+    if (script.avatarLayerId && !scene.layers.some((layer) => layer.id === script.avatarLayerId && layer.kind === 'avatar')) {
+      context.addIssue({ code: 'custom', path: ['preparedScriptSettings', 'scripts', index, 'avatarLayerId'], message: 'Script avatar must reference an avatar layer.' });
+    }
+  });
+});
 export const projectRecordSchema = z.object({
   id: projectIdSchema,
   title: projectTitleSchema,
@@ -238,6 +249,22 @@ function migratePreparedScriptSettings(
   if (current.success && (current.data.scripts.length > 0 || manualPlayback.playlist.length === 0)) {
     return { ...current.data, scripts: [...current.data.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
   }
+  // Schema v13 did not have an avatar assignment. Preserve its scripts while
+  // making the new VAS selection explicit and safely unassigned.
+  const legacy = z.object({
+    enabled: z.boolean(),
+    scripts: z.array(z.object({
+      id: projectIdSchema, name: z.string().trim().min(1).max(120), enabled: z.boolean(), order: z.number().int().min(0).max(19),
+      playbackType: z.enum(['video', 'audio', 'tts']), mediaLayerId: projectIdSchema.nullable(), speechText: z.string().trim().max(5_000),
+      interruptMode: z.enum(['immediate', 'after-current']), completionMode: z.enum(['stop', 'next', 'resume-sequence']),
+    })).max(20),
+  }).safeParse(value);
+  if (legacy.success && (legacy.data.scripts.length > 0 || manualPlayback.playlist.length === 0)) {
+    return projectPreparedScriptSettingsSchema.parse({
+      ...legacy.data,
+      scripts: legacy.data.scripts.map((script) => ({ ...script, avatarLayerId: null })),
+    });
+  }
   const scripts = manualPlayback.playlist.flatMap((item, order) => {
     const layer = layers.find((candidate) => candidate.id === item.layerId);
     if (!layer || (layer.kind !== 'video' && layer.kind !== 'audio')) return [];
@@ -248,6 +275,7 @@ function migratePreparedScriptSettings(
       order,
       playbackType: layer.kind,
       mediaLayerId: layer.id,
+      avatarLayerId: null,
       speechText: '',
       interruptMode: 'immediate' as const,
       completionMode: 'next' as const,

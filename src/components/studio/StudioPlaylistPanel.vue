@@ -3,7 +3,7 @@ import type { PreparedScriptPlaybackSnapshot } from '../../modules/playback/prep
 import type { ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
 
 defineProps<{ enabled: boolean; snapshot: PreparedScriptPlaybackSnapshot; scripts: ProjectPreparedScript[]; layers: ProjectSceneLayer[]; sourceDisplayName: (layer: ProjectSceneLayer) => string; }>();
-const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: string]; play: [scriptId: string]; start: []; pause: []; resume: []; skip: []; stop: []; toggle: []; move: [index: number, delta: number]; remove: [index: number]; changed: []; }>();
+const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: string]; pickAudio: [scriptId: string]; play: [scriptId: string]; start: []; pause: []; resume: []; skip: []; stop: []; toggle: []; move: [index: number, delta: number]; remove: [index: number]; changed: []; }>();
 </script>
 
 <template>
@@ -20,7 +20,9 @@ const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: stri
         <div class="prepared-script-fields">
           <label>Loại<select v-model="script.playbackType" @change="script.mediaLayerId = script.playbackType === 'tts' ? null : script.mediaLayerId; emit('changed')"><option value="video">Video</option><option value="audio">Thoại file</option><option value="tts">TTS</option></select></label>
           <label v-if="script.playbackType !== 'tts'">Nguồn<select v-model="script.mediaLayerId" @change="emit('changed')"><option :value="null">Chọn nguồn</option><option v-for="layer in layers.filter((item) => item.kind === script.playbackType)" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
+          <button v-if="script.playbackType === 'audio'" type="button" class="prepared-script-import" @click="emit('pickAudio', script.id)">Chọn file audio</button>
           <label v-else class="prepared-script-text">Nội dung thoại<textarea v-model="script.speechText" maxlength="5000" placeholder="Nhập lời thoại TTS..." @change="emit('changed')" /></label>
+          <label>Avatar VAS<select v-model="script.avatarLayerId" @change="emit('changed')"><option :value="null">Không dùng avatar</option><option v-for="layer in layers.filter((item) => item.kind === 'avatar')" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
           <label>Ngắt<select v-model="script.interruptMode" @change="emit('changed')"><option value="immediate">Phát ngay</option><option value="after-current">Chờ kịch bản hiện tại</option></select></label>
           <label>Sau khi xong<select v-model="script.completionMode" @change="emit('changed')"><option value="stop">Dừng</option><option value="next">Kịch bản tiếp</option><option value="resume-sequence">Tiếp tục chuỗi</option></select></label>
         </div>

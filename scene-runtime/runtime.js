@@ -89,10 +89,13 @@ function layerBox(layer, imageIndex) {
 function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
-  const speechVisible = layer.kind !== 'avatar' || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
-  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false };
   const managed = presentation.managedLayerIds.includes(layer.id);
-  const presentationVisible = !managed || presentation.activeLayerId === layer.id;
+  // A script-selected avatar owns its visibility; legacy idle/talking pairs keep their role behavior.
+  const speechVisible = layer.kind !== 'avatar' || managed || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
+  const presentationVisible = !managed || (layer.kind === 'avatar'
+    ? presentation.activeAvatarLayerId === layer.id
+    : presentation.activeLayerId === layer.id);
   const renderedKind = mediaKind(layer, state.scene);
   root.dataset.mediaKind = renderedKind;
   root.dataset.avatarState = layer.kind === 'avatar' ? layer.avatarState : '';

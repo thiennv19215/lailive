@@ -6,6 +6,7 @@ export interface PreparedScriptPlaybackSnapshot {
   mode: PreparedScriptPlaybackMode;
   activeScriptId: string | null;
   activeLayerId: string | null;
+  activeAvatarLayerId: string | null;
   playbackRevision: number;
   queuedScriptIds: string[];
   errorMessage: string | null;
@@ -24,7 +25,7 @@ export class PreparedScriptPlaybackController {
   private listeners = new Set<Listener>();
   private disposed = false;
   private sequenceActive = false;
-  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
+  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, queuedScriptIds: [], errorMessage: null };
 
   configure(settings: ProjectPreparedScriptSettings, layers: readonly PlayableLayer[]): void {
     this.settings = { enabled: settings.enabled, scripts: [...settings.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
@@ -61,7 +62,7 @@ export class PreparedScriptPlaybackController {
   stop(): boolean {
     const changed = this.snapshotValue.mode !== 'stopped';
     this.sequenceActive = false;
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
     if (changed) this.emit();
     return changed;
   }
@@ -85,7 +86,7 @@ export class PreparedScriptPlaybackController {
     const queued = this.snapshotValue.queuedScriptIds.shift();
     if (queued) return this.activate(this.script(queued)!);
     if (active.completionMode === 'next' || (active.completionMode === 'resume-sequence' && this.sequenceActive)) return this.activateNext(active.order + 1);
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private activateNext(start: number): boolean {
@@ -101,12 +102,16 @@ export class PreparedScriptPlaybackController {
       const layer = script.mediaLayerId ? this.layers.get(script.mediaLayerId) : undefined;
       if (!layer || !layer.available || layer.kind !== script.playbackType) return this.fail(`Nguồn ${script.playbackType} của ${script.name} chưa sẵn sàng.`);
     }
-    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    if (script.avatarLayerId) {
+      const avatar = this.layers.get(script.avatarLayerId);
+      if (!avatar || !avatar.available || avatar.kind !== 'avatar') return this.fail(`Avatar for ${script.name} is unavailable.`);
+    }
+    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, activeAvatarLayerId: script.avatarLayerId, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private script(id: string): ProjectPreparedScript | undefined { return this.settings.scripts.find((script) => script.id === id); }
   private scriptIndex(id: string): number { return this.settings.scripts.findIndex((script) => script.id === id); }
   private matches(scriptId: string, revision: number): boolean { return !this.disposed && this.snapshotValue.activeScriptId === scriptId && this.snapshotValue.playbackRevision === revision; }
-  private fail(message: string): false { this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, errorMessage: message }; this.emit(); return false; }
+  private fail(message: string): false { this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, activeAvatarLayerId: null, errorMessage: message }; this.emit(); return false; }
   private emit(): void { if (!this.disposed) for (const listener of this.listeners) listener(this.snapshot()); }
 }
