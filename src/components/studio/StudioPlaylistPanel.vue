@@ -8,8 +8,8 @@ const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: stri
 
 <template>
   <section class="source-panel playlist-panel">
-    <p class="playlist-state">Hàng tự chạy tạm dừng khi có phản hồi. Các câu chào và tư vấn phát theo hàng đợi, sau đó mục tự chạy tiếp tục đúng vị trí.</p>
-    <header><strong>Kịch bản Timeline</strong><button type="button" class="switch" :class="{ on: enabled }" :aria-pressed="enabled" @click="emit('toggle')"><span /></button></header>
+    <p class="playlist-state">Tạo và sắp xếp kịch bản cho vòng lặp nền, chờ phát ưu tiên, hoặc phản hồi tức thời như chào khách và tư vấn.</p>
+    <header><strong>Thư viện kịch bản</strong><button type="button" class="switch" :class="{ on: enabled }" :aria-pressed="enabled" @click="emit('toggle')"><span /></button></header>
     <p class="playlist-state">{{ snapshot.mode }}<span v-if="snapshot.activeScriptId"> · Đang phát {{ scripts.find((script) => script.id === snapshot.activeScriptId)?.name }}</span></p>
     <div class="playlist-controls">
       <button type="button" :disabled="!enabled || snapshot.mode !== 'stopped'" @click="emit('start')">Chạy lần lượt</button><button type="button" :disabled="snapshot.mode !== 'playing'" @click="emit('pause')">Tạm dừng</button><button type="button" :disabled="snapshot.mode !== 'paused'" @click="emit('resume')">Tiếp tục</button><button type="button" :disabled="!snapshot.activeScriptId" @click="emit('skip')">Bỏ qua</button><button type="button" :disabled="snapshot.mode === 'stopped'" @click="emit('stop')">Dừng</button>
@@ -19,7 +19,7 @@ const emit = defineEmits<{ add: [type: 'video' | 'audio' | 'tts', layerId?: stri
       <li v-for="(script, index) in scripts" :key="script.id" :class="{ active: snapshot.activeScriptId === script.id }">
         <div class="prepared-script-title"><b>R{{ index + 1 }}</b><input v-model="script.name" maxlength="120" @change="emit('changed')" /><button type="button" :disabled="!enabled || !script.enabled" @click="emit('play', script.id)">Phát</button></div>
         <div class="prepared-script-fields">
-          <label>Chế độ<select v-model="script.role" @change="emit('changed')"><option value="idle">Tự chạy</option><option value="activation">Kích hoạt</option><option value="conversation">Đang nói</option></select></label>
+          <label>Luồng phát<select v-model="script.role" @change="emit('changed')"><option value="idle">Vòng lặp nền</option><option value="activation">Chờ phát ưu tiên</option><option value="conversation">Phản hồi tức thời</option></select></label>
           <label>Loại<select v-model="script.playbackType" @change="script.mediaLayerId = script.playbackType === 'tts' ? null : script.mediaLayerId; emit('changed')"><option value="video">Video</option><option value="audio">Thoại file</option><option value="tts">TTS</option></select></label>
           <label v-if="script.playbackType !== 'tts'">Nguồn<select v-model="script.mediaLayerId" @change="emit('changed')"><option :value="null">Chọn nguồn</option><option v-for="layer in layers.filter((item) => item.kind === script.playbackType)" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
           <label v-if="script.playbackType === 'video'">Audio kèm<select v-model="script.audioLayerId" @change="emit('changed')"><option :value="null">Không có</option><option v-for="layer in layers.filter((item) => item.kind === 'audio')" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>

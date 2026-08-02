@@ -29,7 +29,7 @@ const activeScript = computed(() => activeLayer.value
   : undefined);
 
 function roleLabel(role: PreparedScriptRole): string {
-  return role === 'idle' ? 'Hàng tự chạy' : role === 'activation' ? 'Ưu tiên kích hoạt' : 'Đang nói';
+  return role === 'idle' ? 'Vòng lặp nền' : role === 'activation' ? 'Chờ phát ưu tiên' : 'Phản hồi tức thời';
 }
 
 onMounted(async () => {
@@ -61,8 +61,8 @@ onMounted(async () => {
         <p><b>{{ sourceDisplayName(activeLayer) }}</b><span v-if="activeScript"> · {{ roleLabel(activeScript.role) }}</span></p>
         <div class="source-script-actions">
           <button type="button" :class="{ active: activeScript?.role === 'idle' }" @click="emit('assign', activeLayer.id, 'idle')">+ Hàng tự chạy</button>
-          <button type="button" :class="{ active: activeScript?.role === 'activation' }" @click="emit('assign', activeLayer.id, 'activation')">Kích hoạt ưu tiên</button>
-          <button type="button" :class="{ active: activeScript?.role === 'conversation' }" @click="emit('assign', activeLayer.id, 'conversation')">Khi nói</button>
+          <button type="button" :class="{ active: activeScript?.role === 'activation' }" @click="emit('assign', activeLayer.id, 'activation')">+ Chờ phát ưu tiên</button>
+          <button type="button" :class="{ active: activeScript?.role === 'conversation' }" @click="emit('assign', activeLayer.id, 'conversation')">+ Phản hồi tức thời</button>
         </div>
         <button v-if="activeLayer.kind === 'video' || activeLayer.kind === 'avatar'" type="button" class="source-audio-action" @click="emit('addAudio', activeLayer.id)">+ Gắn audio cho nguồn này</button>
       </template>

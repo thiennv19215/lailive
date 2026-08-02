@@ -706,14 +706,14 @@ function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): v
     script.speechText = '';
   }
   script.role = role;
-  script.name = `R${script.order + 1} - ${role === 'idle' ? 'Tự chạy' : role === 'activation' ? 'Kích hoạt' : 'Đang nói'} - ${layer.name}`;
+  script.name = `R${script.order + 1} - ${role === 'idle' ? 'Vòng lặp' : role === 'activation' ? 'Ưu tiên' : 'Phản hồi'} - ${layer.name}`;
   if (role === 'idle') script.completionMode = 'resume-sequence';
   if (role === 'conversation') script.completionMode = 'resume-sequence';
   syncPlaybackController();
   if (role === 'idle') startWaitingTimelineIfReady();
   notice.value = role === 'idle'
     ? `Đã thêm ${layer.name} vào Hàng tự chạy. Nó sẽ phát sau các mục đang có.`
-    : `Đã gán ${layer.name} vào chế độ ${role === 'activation' ? 'Kích hoạt' : 'Đang nói'}.`;
+    : `Đã thêm ${layer.name} vào ${role === 'activation' ? 'Chờ phát ưu tiên' : 'Phản hồi tức thời'}.`;
 }
 
 function setAvatarPreviewState(state: AvatarSpeechState): void {
@@ -1335,7 +1335,7 @@ function selectVoice(option: string): void {
       @open-settings="dialog = 'livestream'"
     />
 
-    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" @open-prepared-scripts="preparedScriptsOpen = true" @start-sequence="playbackStart" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
+    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" @open-prepared-scripts="preparedScriptsOpen = true" @start-sequence="playbackStart" @play-script="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
 
     <div v-if="avatarLibraryOpen" class="studio-dialog-backdrop" @click.self="avatarLibraryOpen = false">
       <section class="studio-dialog avatar-library-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-library-title">

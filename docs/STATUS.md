@@ -1040,3 +1040,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - activation boundary behavior
 
 - `Kích hoạt ưu tiên` now waits for the current automatic Timeline clip to finish, then plays before the next clip begins. This differs intentionally from customer conversation responses, which can pause the background for an immediate reply.
+
+## Session update - script orchestration board
+
+- Reworked the Timeline into a `Kịch bản` board with three explicit lanes: `Vòng lặp nền`, `Chờ phát ưu tiên`, and `Phản hồi tức thời`. Every script has a visible clip and direct play action, leaving room for future greeting and consultation scripts.
