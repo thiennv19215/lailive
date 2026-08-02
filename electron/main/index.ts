@@ -39,6 +39,9 @@ const closeSmokeMode = process.argv.includes('--close-confirmation-smoke');
 const auxiliarySmokeMode = process.argv.includes('--auxiliary-window-smoke');
 const captureMode = process.argv.includes('--ui-capture');
 const sceneRuntimeSmokeMode = process.argv.includes('--scene-runtime-smoke');
+// Isolated capture profiles must run alongside the operator's desktop app.
+// They never share its user data and exist only for automated verification.
+const isolatedCaptureMode = captureMode && Boolean(process.env.AI_LIVESTREAM_SMOKE_DATA_DIR);
 
 app.setName('AI Livestream');
 // Studio playback is operator initiated, but media is mounted asynchronously
@@ -47,7 +50,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if ((smokeMode || closeSmokeMode || auxiliarySmokeMode || captureMode) && process.env.AI_LIVESTREAM_SMOKE_DATA_DIR) {
   app.setPath('userData', process.env.AI_LIVESTREAM_SMOKE_DATA_DIR);
 }
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const hasSingleInstanceLock = isolatedCaptureMode || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 else app.on('second-instance', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;

@@ -1,4 +1,4 @@
-export const PROJECT_SCHEMA_VERSION = 17 as const;
+export const PROJECT_SCHEMA_VERSION = 19 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -250,7 +250,7 @@ export function createProjectSceneLayer(
     opacity: 1,
     fitMode: 'contain',
     loop: kind === 'gif' || kind === 'video' || kind === 'audio',
-    muted: kind === 'video',
+    muted: false,
     volume: 1,
     avatarState: kind === 'avatar' ? 'idle' : 'none',
     // An avatar becomes motion-managed only after the operator assigns a state.

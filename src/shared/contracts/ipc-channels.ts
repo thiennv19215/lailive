@@ -48,6 +48,7 @@ export const IPC_CHANNELS = {
   sceneRuntimeGetStatus: 'scene-runtime:get-status',
   sceneRuntimePublish: 'scene-runtime:publish',
   sceneRuntimePlaybackEnded: 'scene-runtime:playback-ended',
+  sceneRuntimeTtsEvent: 'scene-runtime:tts-event',
   obsGetConfig: 'obs:get-config',
   obsSetConfig: 'obs:set-config',
   obsTestConnection: 'obs:test-connection',

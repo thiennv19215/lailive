@@ -218,6 +218,7 @@ const {
   avatarState: avatarPreviewState,
   avatarVideo: avatarVideoSnapshot,
   buildSceneDocument,
+  onPlaybackError: (message) => { notice.value = message; },
   onPublishError: (message) => { notice.value = message.startsWith('Playlist') ? message : `Không đồng bộ Browser Source: ${message}`; },
 });
 
@@ -442,11 +443,15 @@ async function addLocalAudio(): Promise<void> {
   layers.value.unshift(layer);
   activeLayerIndex.value = 0;
   if (dataUrl) audioSources.value = { ...audioSources.value, [reference.id]: dataUrl };
+  // An audio upload is a complete playable source. Previously it was only a
+  // layer, leaving no Timeline entry for the operator to start.
+  addPreparedScript('audio', layer.id);
   await refreshMediaStatus();
   await publishPlayback();
   await refreshSceneRuntimeUrl();
   await saveSceneNow();
-  notice.value = `Đã thêm audio ${reference.label}. Chọn video rồi gắn audio vào kịch bản của video đó.`;
+  preparedScriptsOpen.value = true;
+  notice.value = `Đã thêm audio ${reference.label} vào Timeline. Bấm Phát để nghe.`;
 }
 
 async function addLocalVideo(): Promise<void> {
@@ -1154,7 +1159,8 @@ async function saveAvatarMock(): Promise<void> {
   mediaReferences.value.push(reference);
   const layer = createLayer(avatarName.value.trim(), 'avatar', { type: 'media', assetId: null, mediaReferenceId: reference.id });
   layer.loop = true;
-  layer.muted = true;
+  // MP4 avatars can carry their own dialogue; only non-video avatars stay silent.
+  layer.muted = reference.kind !== 'video';
   // GIF avatars commonly use a green screen instead of alpha transparency.
   if (reference.kind === 'image') layer.chromaKey = { enabled: true, color: '#00ff00', tolerance: 32 };
   layer.avatarState = 'idle';

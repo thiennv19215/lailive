@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import http, { type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { sceneRuntimeLogSchema, sceneRuntimePlaybackEndedSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema } from '../../src/shared/validation/scene-runtime';
-import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimePlaybackEnded, type SceneRuntimeState, type SceneRuntimeStatus } from '../../src/shared/contracts/scene-runtime';
+import { sceneRuntimeLogSchema, sceneRuntimePlaybackEndedSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema, sceneRuntimeTtsEventSchema } from '../../src/shared/validation/scene-runtime';
+import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimePlaybackEnded, type SceneRuntimeState, type SceneRuntimeStatus, type SceneRuntimeTtsEvent, type SceneTtsPlayback } from '../../src/shared/contracts/scene-runtime';
 import type { ProjectLayerAssetId } from '../../src/shared/contracts/projects';
 import type { AvatarSpeechState } from '../../src/shared/contracts/queue';
 
@@ -52,10 +52,11 @@ async function readJson(request: http.IncomingMessage): Promise<unknown> {
 }
 
 function changedTopLevelKeys(previous: SceneRuntimeState | null, next: SceneRuntimeState): string[] {
-  if (!previous) return ['scene', 'avatarState', 'presentation'];
+  if (!previous) return ['scene', 'avatarState', 'presentation', 'tts'];
   const keys: string[] = [];
   if (previous.avatarState !== next.avatarState) keys.push('avatarState');
   if (JSON.stringify(previous.presentation) !== JSON.stringify(next.presentation)) keys.push('presentation');
+  if (JSON.stringify(previous.tts) !== JSON.stringify(next.tts)) keys.push('tts');
   for (const key of Object.keys(next.scene) as Array<keyof SceneRuntimeState['scene']>) {
     if (JSON.stringify(previous.scene[key]) !== JSON.stringify(next.scene[key])) keys.push(`scene.${String(key)}`);
   }
@@ -74,6 +75,7 @@ export class SceneRuntimeService {
   private readonly logs: SceneRuntimeBrowserLog[] = [];
   private readonly listeners = new Set<(status: SceneRuntimeStatus) => void>();
   private readonly playbackEndedListeners = new Set<(event: SceneRuntimePlaybackEnded) => void>();
+  private readonly ttsListeners = new Set<(event: SceneRuntimeTtsEvent) => void>();
 
   constructor(private readonly options: SceneRuntimeOptions) {}
 
@@ -89,9 +91,9 @@ export class SceneRuntimeService {
     return this.getStatus();
   }
 
-  publish(scene: unknown, avatarState: AvatarSpeechState, presentation: ScenePresentationState = createDefaultScenePresentationState()): SceneRuntimeEvent {
-    const parsed = sceneRuntimePublishSchema.parse({ scene, avatarState, presentation });
-    const next: SceneRuntimeState = { scene: parsed.scene, avatarState: parsed.avatarState, presentation: structuredClone(parsed.presentation) };
+  publish(scene: unknown, avatarState: AvatarSpeechState, presentation: ScenePresentationState = createDefaultScenePresentationState(), tts: SceneTtsPlayback | null = null): SceneRuntimeEvent {
+    const parsed = sceneRuntimePublishSchema.parse({ scene, avatarState, presentation, tts });
+    const next: SceneRuntimeState = { scene: parsed.scene, avatarState: parsed.avatarState, presentation: structuredClone(parsed.presentation), tts: structuredClone(parsed.tts) };
     const event: SceneRuntimeEvent = {
       kind: this.state ? 'patch' : 'snapshot',
       revision: ++this.revision,
@@ -132,6 +134,7 @@ export class SceneRuntimeService {
     this.playbackEndedListeners.add(listener);
     return () => this.playbackEndedListeners.delete(listener);
   }
+  subscribeTts(listener: (event: SceneRuntimeTtsEvent) => void): () => void { this.ttsListeners.add(listener); return () => this.ttsListeners.delete(listener); }
 
   async close(): Promise<void> {
     for (const client of this.clients.keys()) client.end();
@@ -144,6 +147,7 @@ export class SceneRuntimeService {
     this.emitStatus();
     this.listeners.clear();
     this.playbackEndedListeners.clear();
+    this.ttsListeners.clear();
   }
 
   private writeEvent(response: ServerResponse, event: SceneRuntimeEvent): void {
@@ -187,7 +191,7 @@ export class SceneRuntimeService {
         const clientId = sceneRuntimeReadySchema.shape.clientId.safeParse(url.searchParams.get('clientId')).data ?? null;
         this.clients.set(response, clientId);
         this.emitStatus();
-        if (this.state) this.writeEvent(response, { kind: 'snapshot', revision: this.revision, sentAt: new Date().toISOString(), changedKeys: ['scene', 'avatarState', 'presentation'], state: structuredClone(this.state) });
+        if (this.state) this.writeEvent(response, { kind: 'snapshot', revision: this.revision, sentAt: new Date().toISOString(), changedKeys: ['scene', 'avatarState', 'presentation', 'tts'], state: structuredClone(this.state) });
         request.once('close', () => {
           this.clients.delete(response);
           if (clientId) this.readyClients.delete(clientId);
@@ -216,6 +220,12 @@ export class SceneRuntimeService {
         // callbacks from a former media node after a hard cut.
         if (presentation?.pendingLayerId || presentation?.activeScriptId !== event.scriptId || presentation.activeLayerId !== event.layerId || presentation.playbackRevision !== event.playbackRevision) return json(response, 202, { ok: false });
         for (const listener of this.playbackEndedListeners) listener(event);
+        return json(response, 200, { ok: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/tts-event') {
+        const event = sceneRuntimeTtsEventSchema.parse(await readJson(request));
+        if (this.state?.tts?.requestId !== event.requestId) return json(response, 202, { ok: false });
+        for (const listener of this.ttsListeners) listener(event);
         return json(response, 200, { ok: true });
       }
       json(response, 404, { error: 'Not found.' });

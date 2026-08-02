@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DEFAULT_TTS_TIMEOUT_MS } from '../contracts/tts';
 
-export const ttsProviderKindSchema = z.enum(['mock', 'http', 'windows-speech']);
+export const ttsProviderKindSchema = z.enum(['mock', 'http']);
 export const ttsProviderConfigInputSchema = z.object({
   kind: ttsProviderKindSchema,
   endpoint: z.union([

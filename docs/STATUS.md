@@ -1182,3 +1182,35 @@ Continue reducing the template-center mismatch with additional independently sou
 
 - Adding local image, video, audio, avatar, or a converted GIF now writes the updated scene and media references immediately after the source is accepted. Repairing a missing-media path does the same, so closing the desktop app before the prior 350 ms autosave delay cannot discard an imported source.
 - Validation passes: `pnpm typecheck`, `pnpm lint`, focused project validation/database/Studio preview tests (25/25), and `git diff --check`. Browser smoke at `http://127.0.0.1:5173/#/projects/perfume` rendered Studio without framework overlay or console warnings/errors; native picker persistence still requires Electron rather than the browser-only dev bridge.
+
+## Session update - browser-source TTS playback
+
+- TTS synthesis now always returns browser-playable audio (`audioBase64`, with an optional `audioUrl` contract). The local mock produces a valid WAV fixture, while HTTP providers continue to pass through actual provider audio.
+- Prepared TTS scripts publish the audio payload to the loopback Scene Runtime. The Browser Source creates `new Audio()`, sets `preload = 'auto'`, awaits `audio.play()`, then reports playback started; only then does the controller set the avatar to talking. It reports `ended` to stop talking and logs provider, audio size, URL, start, end, and errors using `[TTS]` messages.
+- Renderer speech synthesis and the `windows-speech` TTS transport have been removed.
+- Validation passes: `pnpm typecheck`, focused TTS/queue/Scene Runtime tests (17/17), and `git diff --check`.
+- Remaining live verification: Chrome browser binding was unavailable in this environment, and OBS Browser Source is not connected. In Chrome/OBS, play a prepared TTS script and confirm audio plus the `[TTS]` console lifecycle; OBS must have Browser Source audio monitoring/output enabled.
+
+## Session update - prepared audio diagnostics
+
+- A failed prepared audio/video start no longer disappears into the `Sẵn sàng` state. The playlist preserves its final error and identifies the native media cause (`MEDIA_NETWORK`, `MEDIA_DECODE`, or `MEDIA_SRC_NOT_SUPPORTED`) for the selected source.
+- Validation: `pnpm typecheck`, prepared playback tests (17/17), focused ESLint, and `git diff --check` pass.
+
+## Session update - orphaned prepared-source notice
+
+- A prepared script that still references a removed audio/video layer now immediately reports that missing source in the persistent Studio notice, including while an idle loop resumes. This prevents an orphaned reply script from failing invisibly behind the background timeline.
+
+## Session update - explicit browser audio source failure
+
+- A prepared media element with no resolved data/loopback URL now fails immediately with `MEDIA_SOURCE_UNAVAILABLE` instead of remaining indefinitely in the loading state. Playback failures are shown as local Studio notices rather than mislabelled Browser Source publishing failures.
+
+## Session update - video embedded audio
+
+- Video sources now play their embedded audio at the configured volume by default in Studio and the Browser Source. Project schema v19 upgrades prior video sources and MP4 avatars from the former muted default; newly imported MP4 avatars also keep their embedded sound.
+
+## Session update - uploaded audio end-to-end playback
+
+- Uploading a standalone audio source now immediately creates its Timeline item, opens the playlist, and starts the waiting program. It is no longer possible to add an audio layer that has no playback path.
+- Capture-mode Electron launches use their own single-instance scope when a temporary smoke profile is supplied, so media tests do not attach to or disturb an operator's already-open app.
+- The Scene Runtime smoke now uses the local `flower.mp4` fixture (H.264 + AAC) as both an uploaded video and an uploaded audio reference. It verifies both native media elements are unmuted, preserve configured volume, decode, and advance `currentTime` in Browser Source.
+- Validation passes: focused ESLint, `pnpm typecheck`, focused validation/runtime/TTS tests (22/22), `pnpm test:scene-runtime-smoke` (`SCENE_RUNTIME_SMOKE_OK`, propagation 83 ms, visual diff 2.01%), and `git diff --check`.

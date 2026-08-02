@@ -27,15 +27,15 @@ function dependencies(overrides: Partial<InteractionQueueDependencies> = {}): In
     prompt: { systemMessage: 'system', userMessage: 'user', eventType: 'chat', product: null, productScore: null },
   });
   const synthesize: InteractionQueueDependencies['synthesize'] = async (request) => ({
-    requestId: request.requestId, provider: 'mock', transport: 'mock', text: request.text,
-    voice: request.voice, durationMs: 1, mimeType: null, audioBase64: null, cacheKey: request.text, cached: false,
+    requestId: request.requestId, provider: 'mock', transport: 'audio', text: request.text,
+    voice: request.voice, durationMs: 1, mimeType: 'audio/wav', audioBase64: 'AA==', audioUrl: null, cacheKey: request.text, cached: false,
   });
   return {
     generateAi: vi.fn(generateAi),
     cancelAi: vi.fn(async () => false),
     synthesize: vi.fn(synthesize),
     cancelTts: vi.fn(async () => false),
-    play: vi.fn(async () => undefined),
+    play: vi.fn(async (_result, _settings, _signal, onStarted) => { onStarted(); }),
     ...overrides,
   };
 }
@@ -46,7 +46,8 @@ describe('interaction queue', () => {
     let maximumPlaying = 0;
     const states: string[] = [];
     const queue = new InteractionQueue(dependencies({
-      play: vi.fn(async () => {
+      play: vi.fn(async (_result, _settings, _signal, onStarted) => {
+        onStarted();
         playing += 1;
         maximumPlaying = Math.max(maximumPlaying, playing);
         await Promise.resolve();

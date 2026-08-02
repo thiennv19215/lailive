@@ -204,7 +204,10 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.sceneRuntimeGetStatus, () => sceneRuntimeService.getStatus());
   ipcMain.handle(IPC_CHANNELS.sceneRuntimePublish, (_event, payload: unknown) => {
     const parsed = sceneRuntimePublishSchema.parse(payload);
-    return recordLifecycle(diagnosticsService, 'scene', 'Scene publish completed.', () => sceneRuntimeService.publish(parsed.scene, parsed.avatarState, parsed.presentation), { logSuccess: false });
+    return recordLifecycle(diagnosticsService, 'scene', 'Scene publish completed.', () => sceneRuntimeService.publish(parsed.scene, parsed.avatarState, parsed.presentation, parsed.tts), { logSuccess: false });
+  });
+  sceneRuntimeService.subscribeTts((event) => {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.sceneRuntimeTtsEvent, event);
   });
   ipcMain.handle(IPC_CHANNELS.obsGetConfig, () => obsService.getConfig());
   ipcMain.handle(IPC_CHANNELS.obsSetConfig, (_event, payload: unknown) => obsService.setConfig(obsConfigInputSchema.parse(payload)));

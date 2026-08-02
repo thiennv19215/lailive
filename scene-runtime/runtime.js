@@ -11,6 +11,8 @@ let lastChromaFrameAt = 0;
 // Each renderer cuts only after its own decoder has produced the successor's
 // first frame. This never makes two timeline videos visible at once.
 let displayedTimelineLayerId = null;
+let activeTtsRequestId = null;
+let activeTtsAudio = null;
 
 function report(level, message) {
   void fetch('/log', {
@@ -18,6 +20,36 @@ function report(level, message) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ clientId, level, message: String(message).slice(0, 2000) }),
   }).catch(() => undefined);
+}
+
+function reportTts(kind, requestId, error = null) {
+  console.info(`[TTS] ${kind}:`, error ?? requestId);
+  return fetch('/tts-event', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId, kind, error }) }).catch(() => undefined);
+}
+
+async function syncTts(tts) {
+  if (!tts || tts.requestId === activeTtsRequestId) return;
+  activeTtsAudio?.pause();
+  activeTtsRequestId = tts.requestId;
+  const audio = new Audio(`data:${tts.mimeType};base64,${tts.audioBase64}`);
+  activeTtsAudio = audio;
+  audio.preload = 'auto';
+  audio.playbackRate = tts.speed;
+  audio.volume = tts.volume;
+  console.info('[TTS] provider: browser audio');
+  console.info('[TTS] audio size:', tts.audioBase64.length);
+  console.info('[TTS] url: data audio URL');
+  audio.addEventListener('ended', () => { console.info('[TTS] play ended: true'); void reportTts('ended', tts.requestId); }, { once: true });
+  audio.addEventListener('error', () => { const message = 'TTS_AUDIO_PLAYBACK_ERROR'; console.error('[TTS] error:', message); void reportTts('error', tts.requestId, message); }, { once: true });
+  try {
+    await audio.play();
+    console.info('[TTS] play started: true');
+    void reportTts('started', tts.requestId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[TTS] error:', message);
+    void reportTts('error', tts.requestId, message);
+  }
 }
 
 function mediaKind(layer, scene = currentState?.scene) {
@@ -294,6 +326,7 @@ function refreshChroma() {
 
 function render(state) {
   currentState = state;
+  void syncTts(state.tts);
   syncDisplayedTimelineLayer(state.presentation);
   const ratio = state.scene.width / state.scene.height;
   Object.assign(sceneElement.style, {

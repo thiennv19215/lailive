@@ -8,7 +8,7 @@ export interface InteractionQueueDependencies {
   cancelAi(requestId: string): Promise<boolean>;
   synthesize(input: TtsSynthesizeInput): Promise<TtsSynthesisResult>;
   cancelTts(requestId: string): Promise<boolean>;
-  play(result: TtsSynthesisResult, settings: InteractionQueueInput['ttsSettings'], signal: AbortSignal): Promise<void>;
+  play(result: TtsSynthesisResult, settings: InteractionQueueInput['ttsSettings'], signal: AbortSignal, onStarted: () => void): Promise<void>;
   onAvatarState?(state: AvatarSpeechState, job: InteractionQueueJob | null): void;
   onDiagnostic?(event: QueueDiagnosticEvent): void;
 }
@@ -152,9 +152,8 @@ export class InteractionQueue {
             speed: job.ttsSettings.speed, volume: job.ttsSettings.volume, timeoutMs: job.ttsSettings.timeoutMs,
           });
           this.update(job, { state: 'playing', synthesis });
-          this.setAvatarState('talking', job);
           this.emit();
-          await this.dependencies.play(synthesis, job.ttsSettings, this.controller.signal);
+          await this.dependencies.play(synthesis, job.ttsSettings, this.controller.signal, () => this.setAvatarState('talking', job));
           this.finish(job, 'done', null);
         } catch (reason) {
           const stage = queueStage(job.state);

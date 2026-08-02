@@ -74,7 +74,7 @@ const api: DesktopApi = {
   },
   sceneRuntime: {
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimeGetStatus),
-    publish: (scene, avatarState, presentation) => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimePublish, { scene, avatarState, presentation }),
+    publish: (scene, avatarState, presentation, tts) => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimePublish, { scene, avatarState, presentation, tts }),
     onPlaybackEnded: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         const parsed = sceneRuntimePlaybackEndedSchema.safeParse(payload);
@@ -82,6 +82,13 @@ const api: DesktopApi = {
       };
       ipcRenderer.on(IPC_CHANNELS.sceneRuntimePlaybackEnded, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.sceneRuntimePlaybackEnded, listener);
+    },
+    onTtsEvent: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        if (payload && typeof payload === 'object' && 'requestId' in payload && 'kind' in payload) handler(payload as Parameters<typeof handler>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.sceneRuntimeTtsEvent, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.sceneRuntimeTtsEvent, listener);
     },
   },
   obs: {

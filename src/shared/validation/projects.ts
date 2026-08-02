@@ -302,6 +302,10 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
 
   const defaults = createEmptyScene();
   const source = scene && typeof scene === 'object' ? scene as Record<string, unknown> : {};
+  const sourceSchemaVersion = typeof source.schemaVersion === 'number' ? source.schemaVersion : 0;
+  const videoMediaReferenceIds = new Set(z.array(z.object({ id: z.string(), kind: z.string() })).catch([]).parse(source.mediaReferences)
+    .filter((reference) => reference.kind === 'video')
+    .map((reference) => reference.id));
   const sourceLivestream = source.livestreamSettings && typeof source.livestreamSettings === 'object'
     ? source.livestreamSettings as Record<string, unknown>
     : {};
@@ -318,6 +322,10 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
   const migratedLayers = z.array(z.unknown()).max(500).catch([]).parse(source.layers).map((layer, index) => {
     const candidate = layer && typeof layer === 'object' ? layer as Record<string, unknown> : {};
     const kind = z.enum(['avatar', 'image', 'gif', 'video', 'audio', 'text']).catch('image').parse(candidate.kind);
+    const sourceData = candidate.source && typeof candidate.source === 'object' ? candidate.source as Record<string, unknown> : {};
+    const isVideoAvatar = kind === 'avatar'
+      && typeof sourceData.mediaReferenceId === 'string'
+      && videoMediaReferenceIds.has(sourceData.mediaReferenceId);
     return projectSceneLayerSchema.parse({
       ...candidate,
       id: candidate.id ?? `migrated-layer-${index + 1}`,
@@ -325,7 +333,10 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
       kind,
       transform: projectLayerTransformSchema.catch(defaults.layers[0]?.transform ?? { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }).parse(candidate.transform),
       visible: candidate.visible ?? true, locked: candidate.locked ?? false, opacity: candidate.opacity ?? 1, fitMode: candidate.fitMode ?? 'contain',
-      loop: candidate.loop ?? (kind === 'gif' || kind === 'video' || kind === 'audio'), muted: candidate.muted ?? (kind === 'video'), volume: candidate.volume ?? 1,
+      loop: candidate.loop ?? (kind === 'gif' || kind === 'video' || kind === 'audio'),
+      // Version 19 enables embedded audio for video sources, including MP4 avatars.
+      muted: (kind === 'video' || isVideoAvatar) && sourceSchemaVersion < PROJECT_SCHEMA_VERSION ? false : candidate.muted ?? false,
+      volume: candidate.volume ?? 1,
       avatarState: candidate.avatarState ?? (kind === 'avatar' ? 'idle' : 'none'), avatarMotion: candidate.avatarMotion ?? null, chromaKey: candidate.chromaKey ?? { enabled: false, color: '#00ff00', tolerance: 24 },
       source: candidate.source ?? { type: 'none', assetId: null, mediaReferenceId: null },
     });

@@ -155,6 +155,17 @@ function handleMediaPlaying(): void {
 }
 
 function handleMediaError(): void {
+  const media = videoElement.value ?? audioElement.value;
+  const code = media?.error?.code ?? 0;
+  const reason = code === 1 ? 'MEDIA_ABORTED'
+    : code === 2 ? 'MEDIA_NETWORK'
+      : code === 3 ? 'MEDIA_DECODE'
+        : code === 4 ? 'MEDIA_SRC_NOT_SUPPORTED'
+          : 'MEDIA_UNKNOWN';
+  if (props.playbackManaged && props.playbackActive) {
+    emit('error', props.layer.id, props.playbackRevision ?? 0, `${reason}: Media could not be played (${props.layer.name}).`);
+    return;
+  }
   if (props.playbackManaged && props.playbackActive) emit('error', props.layer.id, props.playbackRevision ?? 0, `Không đọc được media “${props.layer.name}”.`);
 }
 
@@ -220,6 +231,11 @@ watch(() => [
   props.layer.fitMode,
 ], refreshChromaRenderer);
 watch(() => [props.playbackManaged, props.playbackActive, props.playbackPaused, props.playbackRevision, props.resumePlayback, props.speechManaged, props.speechActive, props.motionControlled, props.motionActive, props.layer.loop, props.layer.muted, props.layer.volume], syncMediaPlayback);
+watch(() => props.sourceUrl, (sourceUrl) => {
+  if (!sourceUrl && props.playbackManaged && props.playbackActive) {
+    emit('error', props.layer.id, props.playbackRevision ?? 0, `MEDIA_SOURCE_UNAVAILABLE: No browser-playable URL for ${props.layer.name}.`);
+  }
+}, { immediate: true });
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(refreshChromaRenderer);

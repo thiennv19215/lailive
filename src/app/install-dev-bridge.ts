@@ -383,8 +383,8 @@ export function installDevBridge(): void {
       testConnection: async (input) => {
         const config = ttsProviderConfigInputSchema.parse(input);
         return config.kind === 'http'
-          ? { ok: false, voices: config.voices, message: 'Browser dev chỉ kiểm thử TTS mock/Windows; dùng Electron cho HTTP.' }
-          : { ok: true, voices: config.voices, message: config.kind === 'mock' ? 'TTS mock local sẵn sàng.' : 'Windows speech sẵn sàng.' };
+          ? { ok: false, voices: config.voices, message: 'Browser dev chỉ kiểm thử TTS mock; dùng Electron cho HTTP.' }
+          : { ok: true, voices: config.voices, message: 'TTS mock local sẵn sàng.' };
       },
       synthesize: async (input) => {
         const request = ttsSynthesizeInputSchema.parse(input);
@@ -392,9 +392,9 @@ export function installDevBridge(): void {
         const cached = ttsCache.has(key);
         ttsCache.add(key);
         return {
-          requestId: request.requestId, provider: ttsConfig.kind, transport: ttsConfig.kind === 'windows-speech' ? 'speech-synthesis' as const : 'mock' as const,
+          requestId: request.requestId, provider: ttsConfig.kind, transport: 'audio' as const,
           text: request.text, voice: request.voice, durationMs: Math.min(800, Math.max(80, request.text.length * 4)),
-          mimeType: null, audioBase64: null, cacheKey: key, cached,
+          mimeType: 'audio/wav', audioBase64: 'UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAAAAAAAAAAAAAAAAA=', audioUrl: null, cacheKey: key, cached,
         };
       },
       cancel: async () => false,
@@ -415,8 +415,8 @@ export function installDevBridge(): void {
         lastReadyAt: null,
         recentLogs: [],
       }),
-      publish: async (scene, avatarState, presentation) => {
-        const nextState = globalThis.structuredClone(sceneRuntimePublishSchema.parse({ scene, avatarState, presentation }));
+      publish: async (scene, avatarState, presentation, tts) => {
+        const nextState = globalThis.structuredClone(sceneRuntimePublishSchema.parse({ scene, avatarState, presentation, tts }));
         const sentAt = new Date().toISOString();
         const changedKeys = sceneRuntimeState
           ? [
@@ -438,6 +438,7 @@ export function installDevBridge(): void {
         sceneRuntimeLastPublishedAt = sentAt;
         return event;
       },
+      onTtsEvent: () => () => undefined,
       onPlaybackEnded: () => () => undefined,
     },
     obs: {

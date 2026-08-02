@@ -182,7 +182,9 @@ export class PreparedScriptPlaybackController {
     }
     if (active.role === 'idle' && this.sequenceActive) return this.activateNext(active.order + 1, 'idle');
     if (active.completionMode === 'next') return this.activateNext(active.order + 1, active.role);
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    // Keep a media failure visible after playback stops; the next activation
+    // clears it, while the operator can now see what needs fixing.
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private activateNext(start: number, role?: PreparedScriptRole): boolean {

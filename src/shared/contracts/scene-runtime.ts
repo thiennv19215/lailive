@@ -31,6 +31,15 @@ export interface SceneRuntimeState {
   scene: ProjectSceneDocument;
   avatarState: AvatarSpeechState;
   presentation: ScenePresentationState;
+  tts: SceneTtsPlayback | null;
+}
+
+export interface SceneTtsPlayback {
+  requestId: string;
+  audioBase64: string;
+  mimeType: string;
+  speed: number;
+  volume: number;
 }
 
 export interface SceneRuntimeEvent {
@@ -54,6 +63,12 @@ export interface SceneRuntimePlaybackEnded {
   scriptId: string;
   layerId: string;
   playbackRevision: number;
+}
+
+export interface SceneRuntimeTtsEvent {
+  requestId: string;
+  kind: 'started' | 'ended' | 'error';
+  error: string | null;
 }
 
 export interface SceneRuntimeStatus {

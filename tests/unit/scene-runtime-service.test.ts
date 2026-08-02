@@ -114,7 +114,7 @@ describe('SceneRuntimeService', () => {
     const firstEventPromise = readSceneEvent(firstStream);
     const scene = createEmptyScene();
     const published = service.publish(scene, 'idle');
-    expect(published).toMatchObject({ kind: 'snapshot', revision: 1, changedKeys: ['scene', 'avatarState', 'presentation'] });
+    expect(published).toMatchObject({ kind: 'snapshot', revision: 1, changedKeys: ['scene', 'avatarState', 'presentation', 'tts'] });
     await expect(firstEventPromise).resolves.toMatchObject({ kind: 'snapshot', revision: 1 });
 
     const changed: ProjectSceneDocument = {

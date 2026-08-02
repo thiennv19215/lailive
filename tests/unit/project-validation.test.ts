@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyScene, PROJECT_EXPORT_FORMAT, PROJECT_SCHEMA_VERSION } from '../../src/shared/contracts/projects';
+import { createEmptyScene, createProjectSceneLayer, PROJECT_EXPORT_FORMAT, PROJECT_SCHEMA_VERSION } from '../../src/shared/contracts/projects';
 import { absoluteMediaPathSchema, migrateProjectScene, projectCreateSchema, projectExportEnvelopeSchema, projectIdSchema, projectRecordSchema, projectSceneLayerSchema } from '../../src/shared/validation/projects';
 
 describe('project validation', () => {
@@ -99,6 +99,23 @@ describe('project validation', () => {
       chromaKey: { enabled: false, color: '#00ff00', tolerance: 24 },
       source: { type: 'none', assetId: null, mediaReferenceId: null },
     });
+  });
+
+  it('enables embedded audio for new and legacy video sources', () => {
+    expect(createProjectSceneLayer('new-video', 'New video', 'video').muted).toBe(false);
+    const migrated = migrateProjectScene({
+      ...createEmptyScene(),
+      schemaVersion: 18,
+      mediaReferences: [{ id: 'avatar-video-file', label: 'Avatar video', kind: 'video', path: 'C:\\media\\avatar.mp4' }],
+      layers: [{
+        ...createProjectSceneLayer('legacy-video', 'Legacy video', 'video'),
+        muted: true,
+      }, {
+        ...createProjectSceneLayer('legacy-avatar', 'Legacy avatar', 'avatar', { type: 'media', assetId: null, mediaReferenceId: 'avatar-video-file' }),
+        muted: true,
+      }],
+    });
+    expect(migrated.layers.map((layer) => layer.muted)).toEqual([false, false]);
   });
 
   it('accepts prepared audio sources with bounded volume and migrates old media layers', () => {

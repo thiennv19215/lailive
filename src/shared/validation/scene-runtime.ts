@@ -24,6 +24,7 @@ export const sceneRuntimePublishSchema = z.object({
     activeAudioMuted: z.boolean(),
     activeAudioVolume: z.number().finite().min(0).max(1),
   }).optional().default({ mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 }),
+  tts: z.object({ requestId: z.string().trim().min(1).max(120), audioBase64: z.string().min(1).max(30_000_000), mimeType: z.string().trim().min(1).max(120), speed: z.number().min(0.5).max(2), volume: z.number().min(0).max(1) }).nullable().optional().default(null),
 });
 
 export const sceneRuntimeReadySchema = z.object({
@@ -41,3 +42,5 @@ export const sceneRuntimePlaybackEndedSchema = z.object({
   layerId: z.string().trim().min(1).max(200),
   playbackRevision: z.number().int().min(0),
 });
+
+export const sceneRuntimeTtsEventSchema = z.object({ requestId: z.string().trim().min(1).max(120), kind: z.enum(['started', 'ended', 'error']), error: z.string().trim().min(1).max(500).nullable().default(null) });

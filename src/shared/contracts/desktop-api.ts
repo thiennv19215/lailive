@@ -73,8 +73,9 @@ export interface DesktopApi {
   };
   sceneRuntime: {
     getStatus(): Promise<SceneRuntimeStatus>;
-    publish(scene: ProjectSceneDocument, avatarState: AvatarSpeechState, presentation?: ScenePresentationState): Promise<SceneRuntimeEvent>;
+    publish(scene: ProjectSceneDocument, avatarState: AvatarSpeechState, presentation?: ScenePresentationState, tts?: import('./scene-runtime').SceneTtsPlayback | null): Promise<SceneRuntimeEvent>;
     onPlaybackEnded(listener: (event: SceneRuntimePlaybackEnded) => void): () => void;
+    onTtsEvent(listener: (event: import('./scene-runtime').SceneRuntimeTtsEvent) => void): () => void;
   };
   obs: {
     getConfig(): Promise<ObsConfig>;

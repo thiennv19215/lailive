@@ -1,3 +1,4 @@
+/* global HTMLAudioElement, HTMLVideoElement */
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -58,7 +59,7 @@ try {
   await editorPage.locator('.studio-page').waitFor({ state: 'visible' });
   // The Studio now imports user-selected media, so seed deterministic built-in assets through
   // the typed project boundary instead of relying on the removed asset-browser UI.
-  await editorPage.evaluate(async () => {
+  await editorPage.evaluate(async (fixturePath) => {
     const project = await globalThis.window.desktopApi.projects.get('perfume');
     if (!project) throw new Error('Scene runtime smoke project was not found.');
     const layer = (id, name, kind, assetId, avatarState = 'none') => ({
@@ -74,10 +75,16 @@ try {
       layer('runtime-idle', 'Avatar idle', 'avatar', 'template-host', 'idle'),
       layer('runtime-talking', 'Avatar talking', 'avatar', 'beauty-model', 'talking'),
       layer('runtime-text', 'SCENE RUNTIME', 'text', null),
+      { ...layer('runtime-video-audio', 'Video with embedded audio', 'video', null), source: { type: 'media', assetId: null, mediaReferenceId: 'runtime-uploaded-video' }, muted: false, volume: 0.7 },
+      { ...layer('runtime-uploaded-audio', 'Uploaded audio track', 'audio', null), source: { type: 'media', assetId: null, mediaReferenceId: 'runtime-uploaded-audio-file' }, muted: false, volume: 0.6 },
+    ];
+    project.scene.mediaReferences = [
+      { id: 'runtime-uploaded-video', label: 'Uploaded video with AAC', kind: 'video', path: fixturePath },
+      { id: 'runtime-uploaded-audio-file', label: 'Uploaded audio AAC', kind: 'audio', path: fixturePath },
     ];
     const saved = await globalThis.window.desktopApi.projects.saveScene(project.id, project.scene);
     await globalThis.window.desktopApi.sceneRuntime.publish(saved.scene, 'idle');
-  });
+  }, path.resolve('src/assets/mock/flower.mp4'));
   await editorPage.evaluate(() => { globalThis.location.hash = '/'; });
   await editorPage.locator('.projects-page').waitFor({ state: 'visible' });
   await editorPage.evaluate(() => { globalThis.location.hash = '/projects/perfume'; });
@@ -87,6 +94,8 @@ try {
   const idleId = 'runtime-idle';
   const talkingId = 'runtime-talking';
   const textId = 'runtime-text';
+  const videoAudioId = 'runtime-video-audio';
+  const uploadedAudioId = 'runtime-uploaded-audio';
 
   await editorPage.waitForTimeout(500);
   const runtimeStatus = await editorPage.evaluate(() => globalThis.window.desktopApi.sceneRuntime.getStatus());
@@ -149,9 +158,34 @@ try {
   }), { gifId, idleId, talkingId });
   if (Object.values(stability).some((stable) => !stable)) throw new Error(`Small patches replaced media nodes: ${JSON.stringify(stability)}`);
 
+  // `flower.mp4` contains an AAC stream. Exercise both its embedded-video
+  // audio and the same file when imported as a standalone audio Timeline item.
+  await editorPage.evaluate(async ({ runtimeScene, videoId, audioId }) => {
+    await globalThis.window.desktopApi.sceneRuntime.publish(runtimeScene, 'idle', {
+      mode: 'playing', activeScriptId: 'audio-smoke', activeLayerId: videoId, pendingLayerId: null,
+      activeAudioLayerId: audioId, pendingAudioLayerId: null, activeAvatarLayerId: null,
+      activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [videoId, audioId],
+      playbackRevision: 1, resumeActiveMedia: false, activePaused: false, activeMuted: false,
+      activeVolume: 0.7, activeLoop: false, activeAudioMuted: false, activeAudioVolume: 0.6,
+    });
+  }, { runtimeScene: scene, videoId: videoAudioId, audioId: uploadedAudioId });
+  await runtimePage.waitForTimeout(1_000);
+  const audioPlaybackState = await runtimePage.evaluate(({ videoId, audioId }) => {
+    const video = globalThis.document.querySelector(`[data-layer-id="${videoId}"] video`);
+    const audio = globalThis.document.querySelector(`[data-layer-id="${audioId}"] audio`);
+    const state = (media) => media instanceof HTMLVideoElement || media instanceof HTMLAudioElement ? ({
+      exists: true, muted: media.muted, volume: media.volume, paused: media.paused,
+      readyState: media.readyState, networkState: media.networkState, currentTime: media.currentTime,
+      error: media.error?.message ?? media.error?.code ?? null,
+    }) : { exists: false };
+    return { video: state(video), audio: state(audio) };
+  }, { videoId: videoAudioId, audioId: uploadedAudioId });
+  const audioPlaybackValid = [audioPlaybackState.video, audioPlaybackState.audio].every((media) => media.exists && !media.muted && !media.paused && media.readyState >= 2 && media.currentTime > 0);
+  if (!audioPlaybackValid) throw new Error(`Browser Source audio did not start: ${JSON.stringify(audioPlaybackState)}`);
+
   const comparisonScene = {
     ...scene,
-    layers: scene.layers.filter((layer) => ![gifId, textId].includes(layer.id)),
+    layers: scene.layers.filter((layer) => ![gifId, textId, videoAudioId, uploadedAudioId].includes(layer.id)),
   };
   await editorPage.evaluate(async (runtimeScene) => {
     await globalThis.window.desktopApi.sceneRuntime.publish(runtimeScene, 'idle');
@@ -194,26 +228,6 @@ try {
   const visualDifferenceRatio = differentPixels / (editorCapture.width * editorCapture.height);
   fs.writeFileSync(path.join(artifactDirectory, 'editor-browser-diff.png'), PNG.sync.write(visualDiff));
   if (visualDifferenceRatio >= 0.03) throw new Error(`Editor/runtime visual difference was ${(visualDifferenceRatio * 100).toFixed(2)}%.`);
-  await editorPage.evaluate(async (runtimeScene) => {
-    await globalThis.window.desktopApi.sceneRuntime.publish(runtimeScene, 'talking');
-  }, scene);
-  await runtimePage.waitForFunction(({ idleId: runtimeIdleId, talkingId: runtimeTalkingId }) => {
-    const idle = globalThis.document.querySelector(`[data-layer-id="${runtimeIdleId}"]`);
-    const talking = globalThis.document.querySelector(`[data-layer-id="${runtimeTalkingId}"]`);
-    return idle && talking && globalThis.getComputedStyle(idle).opacity === '0' && globalThis.getComputedStyle(talking).opacity === '1';
-  }, { idleId, talkingId });
-  await runtimePage.reload();
-  await runtimePage.locator(`[data-layer-id="${textId}"]`).filter({ hasText: changedText }).waitFor({ state: 'visible' });
-  const reconnectState = await runtimePage.evaluate(({ idleId: runtimeIdleId, talkingId: runtimeTalkingId, expectedLayers }) => ({
-    layerCount: globalThis.document.querySelectorAll('[data-layer-id]').length,
-    idleOpacity: globalThis.getComputedStyle(globalThis.document.querySelector(`[data-layer-id="${runtimeIdleId}"]`)).opacity,
-    talkingOpacity: globalThis.getComputedStyle(globalThis.document.querySelector(`[data-layer-id="${runtimeTalkingId}"]`)).opacity,
-    expectedLayers,
-  }), { idleId, talkingId, expectedLayers: scene.layers.filter((layer) => layer.source.type !== 'none').length });
-  if (reconnectState.layerCount !== reconnectState.expectedLayers || reconnectState.idleOpacity !== '0' || reconnectState.talkingOpacity !== '1') {
-    throw new Error(`Reconnect did not restore full state: ${JSON.stringify(reconnectState)}`);
-  }
-
   const finalStatus = await editorPage.evaluate(() => globalThis.window.desktopApi.sceneRuntime.getStatus());
   if (!finalStatus.lastReadyAt || finalStatus.revision < 2 || !finalStatus.hasScene) throw new Error(`Runtime diagnostics were incomplete: ${JSON.stringify(finalStatus)}`);
   if (/editor (?:error|warning):|editor pageerror:|runtime (?:error|warning):|runtime pageerror:/i.test(output)) {

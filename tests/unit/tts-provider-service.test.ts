@@ -11,7 +11,8 @@ describe('TTS provider service', () => {
     const service = new TtsProviderService();
     const first = await service.synthesize(synthesis);
     const second = await service.synthesize({ ...synthesis, requestId: 'tts-2' });
-    expect(first).toMatchObject({ provider: 'mock', transport: 'mock', cached: false });
+    expect(first).toMatchObject({ provider: 'mock', transport: 'audio', mimeType: 'audio/wav', cached: false });
+    expect(first.audioBase64.length).toBeGreaterThan(100);
     expect(second).toMatchObject({ requestId: 'tts-2', cacheKey: first.cacheKey, cached: true });
     expect(service.clearCache()).toBe(1);
   });
@@ -22,7 +23,7 @@ describe('TTS provider service', () => {
     const service = new TtsProviderService();
     service.setConfig({ kind: 'http', endpoint: 'https://tts.example/synthesize', voices: ['vi-VN-1'], apiKey: 'session-secret' });
     const result = await service.synthesize({ ...synthesis, voice: 'vi-VN-1' });
-    expect(result).toMatchObject({ provider: 'http', transport: 'audio', mimeType: 'audio/wav', audioBase64: 'AQIDBA==' });
+    expect(result).toMatchObject({ provider: 'http', transport: 'audio', mimeType: 'audio/wav', audioBase64: 'AQIDBA==', audioUrl: null });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((await service.synthesize({ ...synthesis, requestId: 'tts-2', voice: 'vi-VN-1' })).cached).toBe(true);
   });
@@ -53,4 +54,3 @@ describe('TTS provider service', () => {
     expect(new TtsProviderService(database).getConfig()).toMatchObject({ kind: 'http', voices: ['vi-VN-1'], hasApiKey: false });
   });
 });
-
