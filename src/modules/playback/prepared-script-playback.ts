@@ -7,9 +7,11 @@ export interface PreparedScriptPlaybackSnapshot {
   activeScriptId: string | null;
   activeLayerId: string | null;
   activeAudioLayerId: string | null;
+  // Attached audio starts only when its video becomes the displayed layer.
+  pendingAudioLayerId: string | null;
   activeAvatarLayerId: string | null;
-  // Keeps the completed waiting clip visible until its successor has a frame.
-  transitionLayerId: string | null;
+  // Incoming video decodes off-screen; only `activeLayerId` is ever visible.
+  pendingLayerId: string | null;
   playbackRevision: number;
   // A resumed waiting video keeps its existing media element and currentTime.
   resumeActiveMedia: boolean;
@@ -32,7 +34,7 @@ export class PreparedScriptPlaybackController {
   private sequenceActive = false;
   private suspendedIdleScriptId: string | null = null;
   private resumeIdleAfterOrder: number | null = null;
-  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, playbackRevision: 0, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null };
+  private snapshotValue: PreparedScriptPlaybackSnapshot = { mode: 'stopped', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, playbackRevision: 0, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null };
 
   configure(settings: ProjectPreparedScriptSettings, layers: readonly PlayableLayer[]): void {
     this.settings = { enabled: settings.enabled, scripts: [...settings.scripts].sort((a, b) => a.order - b.order).map((script, order) => ({ ...script, order })) };
@@ -49,7 +51,8 @@ export class PreparedScriptPlaybackController {
       mode: 'loading',
       activeLayerId,
       activeAudioLayerId,
-      transitionLayerId: null,
+      pendingAudioLayerId: null,
+      pendingLayerId: null,
       resumeActiveMedia: false,
       playbackRevision: this.snapshotValue.playbackRevision + 1,
     };
@@ -117,7 +120,7 @@ export class PreparedScriptPlaybackController {
     this.sequenceActive = false;
     this.suspendedIdleScriptId = null;
     this.resumeIdleAfterOrder = null;
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, queuedScriptIds: [], errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + (changed ? 1 : 0) };
     if (changed) this.emit();
     return changed;
   }
@@ -140,7 +143,14 @@ export class PreparedScriptPlaybackController {
 
   onReady(scriptId: string, revision: number): boolean {
     if (!this.matches(scriptId, revision) || this.snapshotValue.mode === 'paused') return false;
-    if (this.snapshotValue.mode !== 'playing') { this.snapshotValue.mode = 'playing'; this.snapshotValue.transitionLayerId = null; this.emit(); }
+    if (this.snapshotValue.mode !== 'playing') {
+      this.snapshotValue.mode = 'playing';
+      this.snapshotValue.activeLayerId = this.snapshotValue.pendingLayerId ?? this.snapshotValue.activeLayerId;
+      this.snapshotValue.pendingLayerId = null;
+      this.snapshotValue.activeAudioLayerId = this.snapshotValue.pendingAudioLayerId;
+      this.snapshotValue.pendingAudioLayerId = null;
+      this.emit();
+    }
     return true;
   }
   onEnded(scriptId: string, revision: number): boolean { return this.matches(scriptId, revision) && this.snapshotValue.mode !== 'paused' ? this.completeActive() : false; }
@@ -172,7 +182,7 @@ export class PreparedScriptPlaybackController {
     }
     if (active.role === 'idle' && this.sequenceActive) return this.activateNext(active.order + 1, 'idle');
     if (active.completionMode === 'next') return this.activateNext(active.order + 1, active.role);
-    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, resumeActiveMedia: false, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    this.snapshotValue = { ...this.snapshotValue, mode: 'stopped', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private activateNext(start: number, role?: PreparedScriptRole): boolean {
@@ -205,10 +215,11 @@ export class PreparedScriptPlaybackController {
       if (!avatar || !avatar.available || avatar.kind !== 'avatar') return this.fail(`Avatar for ${script.name} is unavailable.`);
     }
     const previous = this.snapshotValue.activeScriptId ? this.script(this.snapshotValue.activeScriptId) : undefined;
-    const transitionLayerId = script.role === 'idle' && previous?.role === 'idle' && this.snapshotValue.activeLayerId !== script.mediaLayerId
-      ? this.snapshotValue.activeLayerId
-      : null;
-    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: script.mediaLayerId, activeAudioLayerId: script.audioLayerId, activeAvatarLayerId: script.avatarLayerId, transitionLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    const incomingVideo = script.playbackType === 'video' && script.mediaLayerId !== null;
+    const retainDisplayedVideo = incomingVideo && previous?.playbackType === 'video' && this.snapshotValue.activeLayerId !== script.mediaLayerId;
+    // The successor plays hidden and reports a decoded frame. At that point
+    // `onReady` performs one atomic hard cut; there is no transition layer.
+    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: retainDisplayedVideo ? this.snapshotValue.activeLayerId : script.mediaLayerId, pendingLayerId: retainDisplayedVideo ? script.mediaLayerId : null, activeAudioLayerId: incomingVideo ? null : script.audioLayerId, pendingAudioLayerId: incomingVideo ? script.audioLayerId : null, activeAvatarLayerId: script.avatarLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private enqueue(scriptId: string, allowDuplicates = false): true {
@@ -219,6 +230,6 @@ export class PreparedScriptPlaybackController {
   private script(id: string): ProjectPreparedScript | undefined { return this.settings.scripts.find((script) => script.id === id); }
   private scriptIndex(id: string): number { return this.settings.scripts.findIndex((script) => script.id === id); }
   private matches(scriptId: string, revision: number): boolean { return !this.disposed && this.snapshotValue.activeScriptId === scriptId && this.snapshotValue.playbackRevision === revision; }
-  private fail(message: string): false { this.suspendedIdleScriptId = null; this.resumeIdleAfterOrder = null; this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, transitionLayerId: null, resumeActiveMedia: false, errorMessage: message }; this.emit(); return false; }
+  private fail(message: string): false { this.suspendedIdleScriptId = null; this.resumeIdleAfterOrder = null; this.snapshotValue = { ...this.snapshotValue, mode: 'error', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, resumeActiveMedia: false, errorMessage: message }; this.emit(); return false; }
   private emit(): void { if (!this.disposed) for (const listener of this.listeners) listener(this.snapshot()); }
 }

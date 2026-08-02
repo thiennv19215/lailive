@@ -170,8 +170,8 @@ describe('SceneRuntimeService', () => {
     if (!url) throw new Error('Runtime URL was not assigned.');
     const scene = createEmptyScene();
     service.publish(scene, 'idle', {
-      mode: 'playing', activeScriptId: 'script-1', activeLayerId: 'video-1', activeAudioLayerId: null,
-      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, transitionLayerId: null,
+      mode: 'playing', activeScriptId: 'script-1', activeLayerId: 'video-1', activeAudioLayerId: null, pendingAudioLayerId: null,
+      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, pendingLayerId: null,
       managedLayerIds: ['video-1'], playbackRevision: 7, resumeActiveMedia: false, activePaused: false,
       activeMuted: false, activeVolume: 1, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0,
     });
@@ -182,6 +182,24 @@ describe('SceneRuntimeService', () => {
     const current = await fetch(`${url}playback-ended`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scriptId: 'script-1', layerId: 'video-1', playbackRevision: 7 }) });
     expect(current.status).toBe(200);
     expect(received).toEqual([{ scriptId: 'script-1', layerId: 'video-1', playbackRevision: 7 }]);
+    unsubscribe();
+  });
+
+  it('rejects an ended callback while a successor video is pending', async () => {
+    service = createService();
+    const { url } = await service.start();
+    if (!url) throw new Error('Runtime URL was not assigned.');
+    service.publish(createEmptyScene(), 'idle', {
+      mode: 'loading', activeScriptId: 'script-2', activeLayerId: 'video-1', pendingLayerId: 'video-2', activeAudioLayerId: null, pendingAudioLayerId: null,
+      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null,
+      managedLayerIds: ['video-1', 'video-2'], playbackRevision: 8, resumeActiveMedia: false, activePaused: true,
+      activeMuted: false, activeVolume: 1, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0,
+    });
+    const received: unknown[] = [];
+    const unsubscribe = service.subscribePlaybackEnded((event) => received.push(event));
+    const response = await fetch(`${url}playback-ended`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scriptId: 'script-2', layerId: 'video-1', playbackRevision: 8 }) });
+    expect(response.status).toBe(202);
+    expect(received).toEqual([]);
     unsubscribe();
   });
 

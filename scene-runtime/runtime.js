@@ -8,12 +8,9 @@ let lastServerRevision = 0;
 let lastPlaybackRevision = -1;
 let chromaFrame = null;
 let lastChromaFrameAt = 0;
-// The Browser Source decoder can lag Studio. Retain its outgoing avatar until
-// this renderer has independently decoded a frame for the incoming one.
-let heldAvatarLayerId = null;
-// The Studio preview acknowledges a new clip first. Keep the old clip locally
-// when this Browser Source decoder has not yet painted the successor.
-let heldTransitionLayerId = null;
+// Each renderer cuts only after its own decoder has produced the successor's
+// first frame. This never makes two timeline videos visible at once.
+let displayedTimelineLayerId = null;
 
 function report(level, message) {
   void fetch('/log', {
@@ -62,30 +59,12 @@ function isDefaultBackgroundLayer(layer) {
     && ['beauty-studio', 'beauty-cream', 'background-white-clean', 'background-white-warm', 'background-white-studio'].includes(layer.source.assetId);
 }
 
-function hasDecodedAvatarFrame(presentation) {
-  if (!presentation?.activeAvatarLayerId) return false;
-  const node = layerNodes.get(presentation.activeAvatarLayerId);
-  const media = node?.querySelector('[data-media="source"]');
-  return media instanceof HTMLVideoElement && media.dataset.frameReady === 'true';
-}
-
-function syncAvatarFrameHold(presentation) {
-  if (presentation?.activeAvatarTransitionLayerId) heldAvatarLayerId = presentation.activeAvatarTransitionLayerId;
-  if (heldAvatarLayerId && hasDecodedAvatarFrame(presentation)) heldAvatarLayerId = null;
-}
-
-function hasDecodedActiveTransitionFrame(presentation) {
-  if (!presentation?.activeLayerId) return true;
-  const node = layerNodes.get(presentation.activeLayerId);
-  const media = node?.querySelector('[data-media="source"]');
-  // Images are decoded by their load event before becoming visible. Audio has
-  // no visual frame, so it must not keep the preceding video on screen.
-  return !(media instanceof HTMLVideoElement) || media.dataset.frameReady === 'true';
-}
-
-function syncTransitionFrameHold(presentation) {
-  if (presentation?.transitionLayerId) heldTransitionLayerId = presentation.transitionLayerId;
-  if (heldTransitionLayerId && hasDecodedActiveTransitionFrame(presentation)) heldTransitionLayerId = null;
+function syncDisplayedTimelineLayer(presentation) {
+  const requestedLayerId = presentation?.activeLayerId;
+  if (!requestedLayerId) { displayedTimelineLayerId = null; return; }
+  const media = layerNodes.get(requestedLayerId)?.querySelector('[data-media="source"]');
+  if (!(media instanceof HTMLVideoElement) || media.dataset.frameReady === 'true') displayedTimelineLayerId = requestedLayerId;
+  else if (!displayedTimelineLayerId) displayedTimelineLayerId = requestedLayerId;
 }
 
 function isStickerLayer(layer) {
@@ -111,7 +90,9 @@ function createLayerNode(layer, state) {
       if (media instanceof HTMLVideoElement) media.playsInline = true;
       media.addEventListener('ended', () => {
         const presentation = currentState?.presentation;
-        if (!presentation || presentation.activeLayerId !== layer.id || !presentation.activeScriptId) return;
+        // A displayed predecessor can end while its successor is decoding.
+        // It must never complete the successor's script.
+        if (!presentation || presentation.pendingLayerId || presentation.activeLayerId !== layer.id || !presentation.activeScriptId) return;
         void fetch('/playback-ended', {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ scriptId: presentation.activeScriptId, layerId: layer.id, playbackRevision: presentation.playbackRevision }),
@@ -151,7 +132,7 @@ function layerBox(layer, imageIndex) {
 function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
-  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, activeAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, transitionLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
   const managed = presentation.managedLayerIds.includes(layer.id);
   // A script-selected avatar owns its visibility; legacy idle/talking pairs keep their role behavior.
   const speechVisible = layer.kind !== 'avatar' || managed || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
@@ -159,10 +140,10 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
   // only state-driven avatars are controlled by the avatar motion manager.
   const motionManaged = layer.kind === 'avatar' && Boolean(layer.avatarMotion) && presentation.activeLayerId !== layer.id;
   const presentationVisible = motionManaged
-    ? presentation.activeAvatarLayerId === layer.id || presentation.activeAvatarTransitionLayerId === layer.id || presentation.pendingAvatarLayerId === layer.id || (heldAvatarLayerId === layer.id && !hasDecodedAvatarFrame(presentation))
-    : !managed || !presentation.activeScriptId || layer.id === presentation.transitionLayerId || (heldTransitionLayerId === layer.id && !hasDecodedActiveTransitionFrame(presentation)) || (layer.kind === 'avatar'
+    ? presentation.activeAvatarLayerId === layer.id || presentation.pendingAvatarLayerId === layer.id
+    : !managed || !presentation.activeScriptId || (layer.kind === 'avatar'
     ? !presentation.activeAvatarLayerId || presentation.activeAvatarLayerId === layer.id
-    : presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
+    : displayedTimelineLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
   const renderedKind = mediaKind(layer, state.scene);
   const sourceMedia = root.querySelector('[data-media="source"]');
   const waitingForAvatarFrame = motionManaged
@@ -192,7 +173,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
       media.style.objectFit = isDefaultBackgroundLayer(layer) ? 'cover' : layer.fitMode;
       media.style.borderRadius = layer.kind === 'image' ? `${state.scene.imageSettings.radius}px` : '0';
       if (media instanceof HTMLMediaElement) {
-        const active = managed && (presentation.activeLayerId === layer.id || presentation.activeAudioLayerId === layer.id);
+        const active = managed && ((presentation.pendingLayerId ?? presentation.activeLayerId) === layer.id || presentation.activeAudioLayerId === layer.id);
         // Timeline media must end so its callback can activate the next script.
         media.loop = managed ? false : layer.loop;
         media.muted = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioMuted : presentation.activeMuted) : layer.muted;
@@ -213,7 +194,7 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
           media.dataset.speechActive = 'true';
           media.loop = true;
           void media.play().catch(() => undefined);
-        } else if (managed && (!presentationVisible || presentation.mode === 'paused' || presentation.activePaused || !active)) {
+        } else if (managed && (presentation.mode === 'paused' || presentation.activePaused || !active)) {
           media.pause();
         } else {
           if (managed && media.dataset.playbackRevision !== revision) {
@@ -313,8 +294,7 @@ function refreshChroma() {
 
 function render(state) {
   currentState = state;
-  syncAvatarFrameHold(state.presentation);
-  syncTransitionFrameHold(state.presentation);
+  syncDisplayedTimelineLayer(state.presentation);
   const ratio = state.scene.width / state.scene.height;
   Object.assign(sceneElement.style, {
     aspectRatio: `${state.scene.width} / ${state.scene.height}`,

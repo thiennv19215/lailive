@@ -2,6 +2,13 @@
 
 Updated: 2026-08-01
 
+## Session update - hard-cut video playback
+
+- Replaced Timeline `transitionLayerId` handoff with an off-screen `pendingLayerId`. The next video starts at time zero, waits for `requestVideoFrameCallback`, then atomically becomes the only visible managed video.
+- Removed the 300 ms opacity transition from Studio and Browser Source runtime layers. Avatar state video switches now use the same decoded-frame hard cut and no longer retain a previous layer.
+- Pending video now suppresses old-media `ended` callbacks, and attached audio is deferred in `pendingAudioLayerId` until the same decoded-frame hard cut. This prevents skipped clips and audio leading video during preload.
+- Validation passes: `pnpm typecheck`, focused playback/runtime tests (26/26), `pnpm test:video-playlist-smoke` (100 transitions), and `git diff --check`. Visual OBS verification with local fixture clips remains the next runtime check.
+
 ## Session update - graceful role transitions
 
 - Role actions no longer cut through an active audio/TTS response. `Kích hoạt` or `Nói chuyện` requested during spoken playback are enqueued and only activate after the current media emits its completion event; the timeline shows `Đang đợi phát xong câu hiện tại trước khi chuyển.` while waiting.

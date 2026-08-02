@@ -11,7 +11,7 @@ describe('AvatarVideoStateManager', () => {
     manager.request('talk');
     expect(manager.snapshot()).toMatchObject({ activeLayerId: 'idle-layer', pendingLayerId: 'talk-layer' });
     manager.ready('talk-layer');
-    expect(manager.snapshot()).toMatchObject({ activeLayerId: 'talk-layer', previousLayerId: 'idle-layer' });
+    expect(manager.snapshot()).toMatchObject({ activeLayerId: 'talk-layer', previousLayerId: null });
     vi.advanceTimersByTime(300);
     expect(manager.snapshot().previousLayerId).toBeNull();
     vi.useRealTimers();

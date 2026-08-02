@@ -212,8 +212,9 @@ export class SceneRuntimeService {
       if (request.method === 'POST' && url.pathname === '/playback-ended') {
         const event = sceneRuntimePlaybackEndedSchema.parse(await readJson(request));
         const presentation = this.state?.presentation;
-        // Ignore delayed browser callbacks from an old script or media node.
-        if (presentation?.activeScriptId !== event.scriptId || presentation.activeLayerId !== event.layerId || presentation.playbackRevision !== event.playbackRevision) return json(response, 202, { ok: false });
+        // Ignore delayed callbacks while a successor is decoding, as well as
+        // callbacks from a former media node after a hard cut.
+        if (presentation?.pendingLayerId || presentation?.activeScriptId !== event.scriptId || presentation.activeLayerId !== event.layerId || presentation.playbackRevision !== event.playbackRevision) return json(response, 202, { ok: false });
         for (const listener of this.playbackEndedListeners) listener(event);
         return json(response, 200, { ok: true });
       }

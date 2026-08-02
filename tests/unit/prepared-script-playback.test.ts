@@ -33,9 +33,9 @@ describe('prepared script playback controller', () => {
     controller.startSequence();
     const firstRevision = controller.snapshot().playbackRevision;
     controller.onEnded('r1', firstRevision);
-    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2', transitionLayerId: 'video-r1' });
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r1', pendingLayerId: 'video-r2' });
     controller.onReady('r4', controller.snapshot().playbackRevision);
-    expect(controller.snapshot().transitionLayerId).toBeNull();
+    expect(controller.snapshot().pendingLayerId).toBeNull();
   });
 
   it('recovers to the next waiting video when the active media cannot start', () => {
@@ -48,7 +48,7 @@ describe('prepared script playback controller', () => {
     controller.startSequence();
     const revision = controller.snapshot().playbackRevision;
     expect(controller.onError('r1', revision, 'play() rejected')).toBe(true);
-    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r1', pendingLayerId: 'video-r2' });
   });
 
   it('returns to the first waiting video after the last waiting video ends', () => {
@@ -182,16 +182,34 @@ describe('prepared script playback controller', () => {
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r3', queuedScriptIds: [] });
   });
 
-  it('starts an attached audio track with its video and clears it at completion', () => {
+  it('starts an attached audio track only after its video has a decoded frame', () => {
     const controller = new PreparedScriptPlaybackController(); controller.configure({
       ...settings,
       scripts: settings.scripts.map((script) => script.id === 'r1' ? { ...script, audioLayerId: 'audio-r2' } : script),
     }, layers);
     expect(controller.playScript('r1')).toBe(true);
     const revision = controller.snapshot().playbackRevision;
-    expect(controller.snapshot()).toMatchObject({ activeLayerId: 'video-r1', activeAudioLayerId: 'audio-r2' });
+    expect(controller.snapshot()).toMatchObject({ activeLayerId: 'video-r1', activeAudioLayerId: null, pendingAudioLayerId: 'audio-r2' });
+    expect(controller.onReady('r1', revision)).toBe(true);
+    expect(controller.snapshot()).toMatchObject({ activeLayerId: 'video-r1', activeAudioLayerId: 'audio-r2', pendingAudioLayerId: null });
     expect(controller.onEnded('r1', revision)).toBe(true);
     expect(controller.snapshot().activeAudioLayerId).toBeNull();
+  });
+
+  it('does not complete a pending successor from the former clip callback', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [
+      settings.scripts[0]!,
+      { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 1, mediaLayerId: 'video-r2' },
+    ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
+    controller.startSequence();
+    const firstRevision = controller.snapshot().playbackRevision;
+    controller.onEnded('r1', firstRevision);
+    const pendingRevision = controller.snapshot().playbackRevision;
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', pendingLayerId: 'video-r2' });
+    // The runtime rejects this callback before it reaches the controller.
+    expect(controller.onEnded('r1', pendingRevision)).toBe(false);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', pendingLayerId: 'video-r2' });
   });
 
   it('rebinds an active script when its source changes from video to audio', () => {
