@@ -21,7 +21,7 @@ function outputState(): string {
 <template>
   <section class="studio-mixer-footer">
     <section class="mixer-panel timeline-panel">
-      <p class="timeline-waiting">Hàng tự chạy phát lần lượt từ mục 1 đến mục cuối. Khi có phản hồi ưu tiên, mục hiện tại tạm dừng rồi tiếp tục đúng vị trí.</p>
+      <p class="timeline-waiting">Hàng tự chạy phát lần lượt từ mục 1 đến mục cuối. Kích hoạt ưu tiên đợi mục hiện tại phát xong; phản hồi hội thoại có thể tạm dừng để trả lời ngay.</p>
       <header><ListVideo :size="15" /><span>Timeline tự chạy</span><button type="button" class="timeline-edit-button" @click="emit('openPreparedScripts')">Chỉnh chi tiết</button></header>
       <div class="timeline-body timeline-program">
         <div class="timeline-program-row">
@@ -33,7 +33,7 @@ function outputState(): string {
           <div class="timeline-playback-controls"><button v-if="snapshot.mode === 'stopped' || snapshot.mode === 'error'" type="button" :disabled="!waitingScripts().length" @click="emit('startSequence')">Chạy Timeline</button><button v-else-if="snapshot.mode === 'playing'" type="button" @click="emit('pause')">Tạm dừng</button><button v-else-if="snapshot.mode === 'paused'" type="button" @click="emit('resume')">Tiếp tục</button><button type="button" :disabled="!snapshot.activeScriptId" @click="emit('skip')">Bỏ qua</button><button type="button" :disabled="snapshot.mode === 'stopped'" @click="emit('stop')">Dừng</button></div>
         </div>
         <div class="timeline-priority-row">
-          <div><strong>Kích hoạt ưu tiên</strong><small>Phát trước Timeline khi có sự kiện</small></div>
+          <div><strong>Kích hoạt ưu tiên</strong><small>Phát sau khi mục Timeline hiện tại kết thúc</small></div>
           <button type="button" :disabled="!priorityScripts().length" @click="emit('playRole', 'activation')">Phát kích hoạt</button>
           <span>{{ priorityScripts().length ? priorityScripts().map((script) => script.name).join(' · ') : 'Chưa chuẩn bị nguồn kích hoạt' }}</span>
         </div>

@@ -59,14 +59,14 @@ describe('prepared script playback controller', () => {
     const controller = new PreparedScriptPlaybackController();
     controller.configure({ ...settings, scripts: [
       settings.scripts[0]!,
-      settings.scripts[1]!,
+      settings.scripts[2]!,
       { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 2, mediaLayerId: 'video-r2' },
     ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
     controller.startSequence();
-    controller.playRole('activation');
+    controller.playRole('conversation');
     controller.removeScripts(['r1']);
     const priorityRevision = controller.snapshot().playbackRevision;
-    controller.onEnded('r2', priorityRevision);
+    controller.onEnded('r3', priorityRevision);
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
   });
 
@@ -125,6 +125,8 @@ describe('prepared script playback controller', () => {
     const waitingRevision = controller.snapshot().playbackRevision;
     controller.onReady('r1', waitingRevision);
     expect(controller.playRole('activation')).toBe(true);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', queuedScriptIds: ['r2'] });
+    controller.onEnded('r1', waitingRevision);
     const activationRevision = controller.snapshot().playbackRevision;
     expect(controller.playRole('conversation')).toBe(true);
     expect(controller.playRole('conversation')).toBe(true);
@@ -134,7 +136,25 @@ describe('prepared script playback controller', () => {
     controller.onEnded('r3', firstConversationRevision);
     const secondConversationRevision = controller.snapshot().playbackRevision;
     controller.onEnded('r3', secondConversationRevision);
-    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', resumeActiveMedia: true });
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', resumeActiveMedia: false });
+  });
+
+  it('waits for the current automatic clip before activation, then continues at the next clip', () => {
+    const controller = new PreparedScriptPlaybackController();
+    controller.configure({ ...settings, scripts: [
+      settings.scripts[0]!,
+      settings.scripts[1]!,
+      { ...settings.scripts[0]!, id: 'r4', name: 'R4', order: 2, mediaLayerId: 'video-r2' },
+    ] }, [...layers, { ...layers[0]!, id: 'video-r2' }]);
+    controller.startSequence();
+    const videoOneRevision = controller.snapshot().playbackRevision;
+    controller.playRole('activation');
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r1', queuedScriptIds: ['r2'] });
+    controller.onEnded('r1', videoOneRevision);
+    const activationRevision = controller.snapshot().playbackRevision;
+    expect(controller.snapshot().activeScriptId).toBe('r2');
+    controller.onEnded('r2', activationRevision);
+    expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r4', activeLayerId: 'video-r2' });
   });
 
   it('waits for an active response to finish before switching conversation mode', () => {

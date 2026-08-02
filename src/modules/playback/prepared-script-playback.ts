@@ -76,9 +76,14 @@ export class PreparedScriptPlaybackController {
       return this.activate(script);
     }
     const active = this.snapshotValue.activeScriptId ? this.script(this.snapshotValue.activeScriptId) : undefined;
-    // Replies never overlap. They queue FIFO behind another reply, but pause a
-    // waiting video immediately so the viewer is answered without delay.
+    // Replies never overlap. Activation is a boundary action: let the current
+    // automatic clip finish before activating it. Conversation can still pause
+    // the background immediately for a live customer response.
     if (active && active.role !== 'idle') return this.enqueue(script.id, true);
+    if (active?.role === 'idle' && role === 'activation') {
+      this.resumeIdleAfterOrder = active.order + 1;
+      return this.enqueue(script.id, true);
+    }
     if (active?.role === 'idle') {
       this.suspendedIdleScriptId = active.id;
       this.resumeIdleAfterOrder = null;

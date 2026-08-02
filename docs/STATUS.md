@@ -1036,3 +1036,7 @@ Continue reducing the template-center mismatch with additional independently sou
 ## Session update - repeating automatic timeline
 
 - `Hàng tự chạy` is now a continuous loop: it advances through every enabled clip in order, then returns to item 1 after the final clip until the operator presses `Dừng`.
+
+## Session update - activation boundary behavior
+
+- `Kích hoạt ưu tiên` now waits for the current automatic Timeline clip to finish, then plays before the next clip begins. This differs intentionally from customer conversation responses, which can pause the background for an immediate reply.
