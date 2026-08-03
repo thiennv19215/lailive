@@ -652,28 +652,6 @@ function syncAvatarVideoStates(): boolean {
   return repaired;
 }
 
-function setAvatarMotion(layerId: string, state: AvatarVideoState | null): void {
-  const layer = layers.value.find((candidate) => candidate.id === layerId);
-  if (!layer || layer.kind !== 'avatar') return;
-  const existingMotionLayer = layers.value.find((candidate) => candidate.id !== layer.id && candidate.kind === 'avatar' && candidate.avatarMotion !== null);
-  if (state) {
-    for (const candidate of layers.value) {
-      if (candidate.id !== layer.id && candidate.kind === 'avatar' && candidate.avatarMotion === state) candidate.avatarMotion = null;
-    }
-  }
-  layer.avatarMotion = state;
-  // A newly assigned state joins the existing presenter frame. The first
-  // assigned state establishes that frame only when the group is new.
-  synchronizeAvatarMotionTransforms(layers.value, existingMotionLayer?.id ?? layer.id);
-  syncAvatarVideoStates();
-  layers.value = [...layers.value];
-}
-
-function changeAvatarVideoState(state: AvatarVideoState): void {
-  syncAvatarVideoStates();
-  if (!avatarVideoManager.request(state)) notice.value = `Avatar ${state} is not ready or already playing.`;
-}
-
 function avatarMotionReady(layerId: string): void { avatarVideoManager.ready(layerId); }
 function avatarMotionEnded(layerId: string): void { avatarVideoManager.ended(layerId); }
 
@@ -766,17 +744,6 @@ function assignActiveSourceToRole(role: PreparedScriptRole, layerId?: string): v
   notice.value = role === 'idle'
     ? `Đã thêm ${layer.name} vào Hàng tự chạy. Nó sẽ phát sau các mục đang có.`
     : `Đã thêm ${layer.name} vào ${role === 'activation' ? 'Chờ phát ưu tiên' : 'Phản hồi tức thời'}.`;
-}
-
-function setAvatarPreviewState(state: AvatarSpeechState): void {
-  avatarPreviewState.value = state;
-  void publishPlayback();
-  notice.value = state === 'talking' ? 'Avatar đang ở trạng thái nói để kiểm tra chuyển động.' : 'Avatar đã trở về trạng thái chờ.';
-}
-
-function setActiveAvatarLayerState(state: AvatarSpeechState): void {
-  if (!activeLayer.value || activeLayer.value.kind !== 'avatar') return;
-  activeLayer.value.avatarState = state;
 }
 
 function previewMediaSource(layer: StudioLayer): string | null {
@@ -1339,9 +1306,7 @@ function selectVoice(option: string): void {
     </section>
 
     <div class="studio-left-stack">
-      <section class="avatar-state-controls"><strong>Chuyển động avatar</strong><div><button v-for="state in (['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'] as AvatarVideoState[])" :key="state" type="button" :class="{ active: avatarVideoSnapshot.state === state }" @click="changeAvatarVideoState(state)">{{ state }}</button></div></section>
-
-      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addAudioFromSourceMenu()" @import-avatar="avatarAddOpen = true" @add-builtin="addLayer" @remove="removeLayer" @select="activeLayerIndex = $event" @set-avatar-motion="setAvatarMotion" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
+      <StudioSourcePanel :layers="layers" :scripts="preparedScripts()" :active-layer-index="activeLayerIndex" primary-action="Thêm source từ máy" :source-display-name="sourceDisplayName" @import-media="(kind) => kind === 'video' ? addLocalVideo() : kind === 'image' ? addLocalImage() : addAudioFromSourceMenu()" @import-avatar="avatarAddOpen = true" @add-builtin="addLayer" @remove="removeLayer" @select="activeLayerIndex = $event" @assign="(layerId, role) => assignActiveSourceToRole(role, layerId)" @add-audio="addAudioForActiveAvatar" @convert-video-to-gif="convertVideoLayerToGif" @edit-scripts="preparedScriptsOpen = true" />
     </div>
 
     <main class="studio-canvas-wrap">
@@ -1378,8 +1343,6 @@ function selectVoice(option: string): void {
       v-model:active-text-preset-id="activeTextPresetId"
       v-model:image-radius="imageRadius"
       :active-layer-kind="activeLayer?.kind"
-      :active-avatar-state="activeLayer?.avatarState"
-      :avatar-preview-state="avatarPreviewState"
       :chroma-key="activeLayer?.chromaKey"
       :focus-text-request="textFocusRequest"
       :text-history-past-count="textHistoryPast.length"
@@ -1399,8 +1362,6 @@ function selectVoice(option: string): void {
       @commit-image-edit="commitImageEdit"
       @undo-inspector="undoInspector"
       @redo-inspector="redoInspector"
-      @set-avatar-layer-state="setActiveAvatarLayerState"
-      @set-avatar-preview-state="setAvatarPreviewState"
       @update-chroma-key="updateActiveLayerChromaKey"
       @edit-avatar="openAvatarScriptEditor"
       @open-settings="dialog = 'livestream'"

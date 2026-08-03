@@ -582,7 +582,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .studio-mixer-footer .timeline-panel {
-  grid-template-columns: 272px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   background: var(--timeline-surface);
 }
 
@@ -621,12 +621,14 @@ a { color: inherit; text-decoration: none; }
 }
 
 .timeline-edit-button {
+  min-width: 98px;
   padding: 6px 9px;
   border-color: #414553;
   border-radius: 7px;
   background: #20222b;
   color: #d9e8f5;
   font-size: 9px;
+  white-space: nowrap;
 }
 
 .script-manager-row {
@@ -661,7 +663,7 @@ a { color: inherit; text-decoration: none; }
   color: #c5ecff;
 }
 
-.media-manager-body { grid-template-columns: 196px minmax(0, 1fr); }
+.media-manager-body { grid-template-columns: 210px minmax(0, 1fr); }
 .media-source-rail {
   position: relative;
   align-content: start;
@@ -672,7 +674,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .media-source-rail::before {
-  content: "NGUON MEDIA";
+  content: "NGUON VIDEO";
   position: absolute;
   top: 13px;
   left: 14px;
@@ -698,6 +700,7 @@ a { color: inherit; text-decoration: none; }
   box-shadow: inset 3px 0 var(--timeline-orange);
   color: #ffd2b8;
 }
+.media-source-rail small { line-height: 1.45; }
 
 .media-timeline-track {
   position: relative;
@@ -727,6 +730,8 @@ a { color: inherit; text-decoration: none; }
   white-space: pre;
 }
 
+.media-timeline-label > small { color: #9da1ae; }
+
 .media-timeline-track .timeline-track {
   position: relative;
   align-items: center;
@@ -750,7 +755,7 @@ a { color: inherit; text-decoration: none; }
 
 .media-timeline-track .timeline-clip {
   position: relative;
-  flex-basis: 218px;
+  flex-basis: 248px;
   min-height: 78px;
   padding: 12px 12px 10px 16px;
   border: 1px solid #a75428;
@@ -886,6 +891,9 @@ a { color: inherit; text-decoration: none; }
   background: #3a2117;
   color: #ffd0b5;
 }
+
+/* Avatar state is driven by scripts, so the source browser gets its full height back. */
+.studio-left-stack { grid-template-rows: minmax(0, 1fr); }
 
 @media (max-width: 680px) {
   .prepared-scripts-dialog .playlist-add-list > header { align-items: flex-start; flex-direction: column; }

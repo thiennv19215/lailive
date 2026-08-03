@@ -1279,3 +1279,15 @@ Continue reducing the template-center mismatch with additional independently sou
 - Audio layers are now hidden from the visual `Nguồn` list and the Timeline media rail; they are not composited layout layers.
 - The script editor keeps audio as an `Audio kèm` choice for each video. Existing standalone-audio scripts remain playable for backward compatibility while no longer appearing as layout sources.
 - Validation: `pnpm typecheck`, prepared-script controller unit tests (17/17), `git diff --check`, and Electron capture of `#/projects/perfume` pass.
+
+## Session update - avatar control decluttering
+
+- Removed manual `Chuyển động avatar`, per-source `Avatar state`, and inspector `Chờ` / `Đang nói` controls. Avatar state now stays script- and TTS-driven, avoiding conflicting manual playback controls.
+- The source panel expands into the space released by the removed control strip. Existing persisted avatar-motion assignments remain compatible at runtime; only their unnecessary editing controls are removed.
+- Validation: `pnpm typecheck`, prepared-script controller unit tests (17/17), `git diff --check`, and Electron capture of `#/projects/perfume` pass.
+
+## Session update - Timeline operator clarity
+
+- Reframed the Studio footer into a left-to-right operator flow: choose a playback lane, choose a video source, press a clip to play it, then adjust the selected source's audio.
+- Replaced technical/ambiguous labels (`Kịch bản`, `TRACK 01`, generic `Chạy`) with intent-led Vietnamese copy. Playback-lane actions now distinguish background, priority, and reply behaviour; clip buttons announce their exact action for assistive technology.
+- Validation: `pnpm typecheck`, `git diff --check`, and Electron capture of `#/projects/perfume` pass.

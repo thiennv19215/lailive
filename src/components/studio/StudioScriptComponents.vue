@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* global Event, HTMLSelectElement */
 import { AudioLines, Clapperboard, UserRound } from '@lucide/vue';
-import type { AvatarVideoState, PreparedScriptRole, ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
+import type { PreparedScriptRole, ProjectPreparedScript, ProjectSceneLayer } from '../../shared/contracts/projects';
 
 const props = defineProps<{
   layers: ProjectSceneLayer[];
@@ -13,7 +13,6 @@ const emit = defineEmits<{
   select: [layerId: string];
   assign: [layerId: string, role: PreparedScriptRole];
   addAudio: [layerId: string];
-  setMotion: [layerId: string, state: AvatarVideoState];
   edit: [];
 }>();
 
@@ -22,7 +21,6 @@ const roleOptions: Array<{ value: PreparedScriptRole; label: string }> = [
   { value: 'activation', label: 'Kich hoat' },
   { value: 'conversation', label: 'Dang noi' },
 ];
-const motionOptions: AvatarVideoState[] = ['idle', 'talk', 'point-product', 'point-cart', 'listen', 'thank', 'wave'];
 
 function components(): ProjectSceneLayer[] {
   return props.layers.filter((layer) => ['avatar', 'video', 'audio'].includes(layer.kind));
@@ -40,7 +38,6 @@ function changeRole(layerId: string, event: Event): void {
   const role = (event.target as HTMLSelectElement).value as PreparedScriptRole;
   emit('assign', layerId, role);
 }
-function changeMotion(layerId: string, event: Event): void { emit('setMotion', layerId, (event.target as HTMLSelectElement).value as AvatarVideoState); }
 </script>
 
 <template>
@@ -54,7 +51,6 @@ function changeMotion(layerId: string, event: Event): void { emit('setMotion', l
         <select :value="roleFor(layer.id)" :aria-label="`Che do cho ${layer.name}`" @click.stop @change="changeRole(layer.id, $event)">
           <option v-for="option in roleOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
         </select>
-        <select v-if="layer.kind === 'avatar'" :value="layer.avatarMotion ?? 'idle'" :aria-label="`Trang thai video ${layer.name}`" @click.stop @change="changeMotion(layer.id, $event)"><option v-for="state in motionOptions" :key="state" :value="state">{{ state }}</option></select>
         <button v-if="layer.kind === 'video' || layer.kind === 'avatar'" type="button" class="script-component-audio" @click.stop="emit('addAudio', layer.id)">+ Audio</button>
       </li>
     </ul>
