@@ -7,6 +7,7 @@ import SettingsPage from '../pages/SettingsPage.vue';
 import TemplatesPage from '../pages/TemplatesPage.vue';
 import AuxiliaryWindowPage from '../pages/AuxiliaryWindowPage.vue';
 import DiagnosticsPage from '../pages/DiagnosticsPage.vue';
+import LiveControlPage from '../pages/LiveControlPage.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -17,6 +18,7 @@ export const router = createRouter({
     { path: '/templates', name: 'templates', component: TemplatesPage },
     { path: '/settings', name: 'settings', component: SettingsPage },
     { path: '/diagnostics', name: 'diagnostics', component: DiagnosticsPage },
+    { path: '/live-control', name: 'live-control', component: LiveControlPage },
     { path: '/projects/:projectId', name: 'project-studio', component: ProjectStudioPage },
     { path: '/auxiliary/:windowName', name: 'auxiliary-window', component: AuxiliaryWindowPage },
     { path: '/:pathMatch(.*)*', redirect: '/' },

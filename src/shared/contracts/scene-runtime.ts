@@ -21,6 +21,7 @@ export interface ScenePresentationState {
   activeLoop: boolean;
   activeAudioMuted: boolean;
   activeAudioVolume: number;
+  activeAudioPaused?: boolean;
   // Optional hints for the Browser Source media cache. Older scene snapshots
   // omit these fields and retain their existing playback behavior.
   resumeAtMs?: number | null;
@@ -32,7 +33,7 @@ export interface ScenePresentationState {
 }
 
 export function createDefaultScenePresentationState(): ScenePresentationState {
-  return { mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0, resumeAtMs: null, audioResumeAtMs: null, preloadLayerId: null, preloadLayerIds: [] };
+  return { mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0, activeAudioPaused: false, resumeAtMs: null, audioResumeAtMs: null, preloadLayerId: null, preloadLayerIds: [] };
 }
 
 export interface SceneRuntimeState {

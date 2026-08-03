@@ -40,8 +40,34 @@ export interface DesktopApi {
   media: {
     check(references: ProjectMediaReference[]): Promise<ProjectMediaStatus[]>;
     pick(kind: ProjectMediaKind, label: string): Promise<ProjectMediaReference | null>;
+    pickMany(kind: ProjectMediaKind, label: string): Promise<ProjectMediaReference[]>;
     read(reference: ProjectMediaReference): Promise<string | null>;
     convertVideoToGif(reference: ProjectMediaReference): Promise<ProjectMediaReference>;
+  };
+  manualLive: {
+    video: {
+      list(): Promise<ManualVideoSnapshot>;
+      import(input: ManualMediaImportInput): Promise<ManualVideoSnapshot>;
+      play(): Promise<ManualVideoSnapshot>;
+      pause(): Promise<ManualVideoSnapshot>;
+      stop(): Promise<ManualVideoSnapshot>;
+      next(): Promise<ManualVideoSnapshot>;
+      previous(): Promise<ManualVideoSnapshot>;
+      setLoop(loop: boolean): Promise<ManualVideoSnapshot>;
+      onSnapshot(listener: (snapshot: ManualVideoSnapshot) => void): () => void;
+    };
+    audio: {
+      list(): Promise<ManualAudioSnapshot>;
+      import(input: ManualMediaImportInput): Promise<ManualAudioSnapshot>;
+      play(): Promise<ManualAudioSnapshot>;
+      pause(): Promise<ManualAudioSnapshot>;
+      stop(): Promise<ManualAudioSnapshot>;
+      next(): Promise<ManualAudioSnapshot>;
+      previous(): Promise<ManualAudioSnapshot>;
+      setVolume(volume: number): Promise<ManualAudioSnapshot>;
+      setAutoNext(autoNext: boolean): Promise<ManualAudioSnapshot>;
+      onSnapshot(listener: (snapshot: ManualAudioSnapshot) => void): () => void;
+    };
   };
   live: {
     getSnapshot(): Promise<LiveSessionSnapshot>;
@@ -133,3 +159,4 @@ import type { ObsConfig, ObsConfigInput, ObsConnectionResult, ObsOutputResult, O
 import type { ShopActionResult, ShopBrowserCandidate, ShopConfig, ShopOpenResult, ShopProductMapping, ShopScheduleItem, ShopSnapshot } from './shop';
 import type { DiagnosticLogEntry, DiagnosticLogQuery, DiagnosticsSnapshot, QueueDiagnosticEvent } from './diagnostics';
 import type { LiveStateConfigurationResult, LiveStateSnapshot, PlayStateCommand } from './live-state';
+import type { ManualAudioSnapshot, ManualMediaImportInput, ManualVideoSnapshot } from './manual-live';

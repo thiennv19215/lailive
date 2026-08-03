@@ -9,7 +9,7 @@ import { liveConnectSchema, liveFixtureEnvelopeSchema, liveProbeSchema } from '.
 import type { SettingsDatabase } from '../services/database';
 import { auxiliaryWindowNameSchema } from '../../src/shared/validation/auxiliary-window';
 import type { AuxiliaryWindowName, AuxiliaryWindowOpenResult } from '../../src/shared/contracts/auxiliary-windows';
-import { projectCreateSchema, projectIdPayloadSchema, projectImportSchema, projectMediaCheckSchema, projectMediaPickSchema, projectMediaReferenceSchema, projectRenameSchema, projectSceneSchema, projectSceneWriteSchema } from '../../src/shared/validation/projects';
+import { projectCreateSchema, projectIdPayloadSchema, projectImportSchema, projectMediaCheckSchema, projectMediaPickManySchema, projectMediaPickSchema, projectMediaReferenceSchema, projectRenameSchema, projectSceneSchema, projectSceneWriteSchema } from '../../src/shared/validation/projects';
 import { convertVideoToGif, inspectMediaReferences, readMediaDataUrl } from '../services/media-files';
 import { GLOBAL_SETTINGS_KEY } from '../../src/shared/contracts/global-settings';
 import type { LiveSessionService } from '../services/live-connector';
@@ -29,6 +29,9 @@ import { liveRuntimeEventSchema, playStateCommandSchema } from '../../src/shared
 import type { LiveStateEngine } from '../services/live-state-engine';
 import type { ProjectSceneDocument } from '../../src/shared/contracts/projects';
 import type { LiveStateConfigurationResult } from '../../src/shared/contracts/live-state';
+import type { ManualLiveController } from '../services/manual-live-controller';
+import type { AudioPlaylistController } from '../services/audio-playlist-controller';
+import { manualAutoNextSchema, manualLoopSchema, manualMediaImportSchema, manualVolumeSchema } from '../../src/shared/validation/manual-live';
 
 const closeResponseSchema = z.object({
   action: z.enum(['cancel', 'quit']),
@@ -38,6 +41,8 @@ const closeResponseSchema = z.object({
 let removeLiveSubscription: (() => void) | null = null;
 let removeShopSubscription: (() => void) | null = null;
 let removeLiveStateSubscription: (() => void) | null = null;
+let removeManualVideoSubscription: (() => void) | null = null;
+let removeManualAudioSubscription: (() => void) | null = null;
 
 async function recordLifecycle<T>(
   diagnostics: DiagnosticsService,
@@ -76,6 +81,8 @@ export function registerIpcHandlers(
   onRendererReady?: () => void,
   onCloseResponse?: (response: z.infer<typeof closeResponseSchema>) => void,
   onOpenAuxiliaryWindow?: (name: AuxiliaryWindowName) => Promise<AuxiliaryWindowOpenResult>,
+  manualVideoController?: ManualLiveController,
+  audioPlaylistController?: AudioPlaylistController,
 ): void {
   let activeLiveStateScene: ProjectSceneDocument | null = null;
 
@@ -186,6 +193,58 @@ export function registerIpcHandlers(
       kind: parsed.kind,
       path: selectedPath,
     });
+  });
+  ipcMain.handle(IPC_CHANNELS.mediaPickMany, async (event, payload: unknown) => {
+    const parsed = projectMediaPickManySchema.parse(payload);
+    const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const filters = parsed.kind === 'video'
+      ? [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'mkv'] }]
+      : parsed.kind === 'audio'
+        ? [{ name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'ogg'] }]
+        : [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }];
+    const result = owner
+      ? await dialog.showOpenDialog(owner, { properties: ['openFile', 'multiSelections'], filters })
+      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters });
+    return result.canceled
+      ? []
+      : result.filePaths.filter((selectedPath) => fs.existsSync(selectedPath)).map((selectedPath) => projectMediaReferenceSchema.parse({
+        id: `media-${randomUUID()}`,
+        label: path.basename(selectedPath),
+        kind: parsed.kind,
+        path: path.resolve(selectedPath),
+      }));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.manualVideoList, () => manualVideoController?.snapshot() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoImport, (_event, payload: unknown) => {
+    if (!manualVideoController) throw new Error('MANUAL_VIDEO_CONTROLLER_UNAVAILABLE');
+    return manualVideoController.import(manualMediaImportSchema.parse(payload).references);
+  });
+  ipcMain.handle(IPC_CHANNELS.manualVideoPlay, () => manualVideoController?.play() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoPause, () => manualVideoController?.pause() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoStop, () => manualVideoController?.stop() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoNext, () => manualVideoController?.next() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoPrevious, () => manualVideoController?.previous() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoSetLoop, (_event, payload: unknown) => manualVideoController?.setLoop(manualLoopSchema.parse(payload).loop) ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioList, () => audioPlaylistController?.snapshot() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioImport, (_event, payload: unknown) => {
+    if (!audioPlaylistController) throw new Error('MANUAL_AUDIO_CONTROLLER_UNAVAILABLE');
+    return audioPlaylistController.import(manualMediaImportSchema.parse(payload).references);
+  });
+  ipcMain.handle(IPC_CHANNELS.manualAudioPlay, () => audioPlaylistController?.play() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioPause, () => audioPlaylistController?.pause() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioStop, () => audioPlaylistController?.stop() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioNext, () => audioPlaylistController?.next() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioPrevious, () => audioPlaylistController?.previous() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioSetVolume, (_event, payload: unknown) => audioPlaylistController?.setVolume(manualVolumeSchema.parse(payload).volume) ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioSetAutoNext, (_event, payload: unknown) => audioPlaylistController?.setAutoNext(manualAutoNextSchema.parse(payload).autoNext) ?? null);
+  removeManualVideoSubscription?.();
+  removeManualAudioSubscription?.();
+  if (manualVideoController) removeManualVideoSubscription = manualVideoController.subscribe((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.manualVideoSnapshot, snapshot);
+  });
+  if (audioPlaylistController) removeManualAudioSubscription = audioPlaylistController.subscribe((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.manualAudioSnapshot, snapshot);
   });
 
   ipcMain.handle(IPC_CHANNELS.liveGetSnapshot, () => liveService.getSnapshot());
@@ -328,5 +387,9 @@ export function removeIpcHandlers(): void {
   removeShopSubscription = null;
   removeLiveStateSubscription?.();
   removeLiveStateSubscription = null;
+  removeManualVideoSubscription?.();
+  removeManualVideoSubscription = null;
+  removeManualAudioSubscription?.();
+  removeManualAudioSubscription = null;
   for (const channel of Object.values(IPC_CHANNELS)) ipcMain.removeHandler(channel);
 }

@@ -2,7 +2,26 @@
 
 ## Current phase and status
 
-**Phase 1 - operator-controlled live state machine: implementation complete, live verification pending.** The Control Center vertical slice, including its scene-editor configuration panel, is implemented and its automated contracts pass. It is not a completed product-parity phase until the OBS Browser Source flow is verified manually in a real OBS instance.
+## Latest audit - repository architecture and playback ownership
+
+- Completed the requested read-only repository audit before further feature changes. The current source has a secure Electron boundary (`contextIsolation`, sandbox, and no renderer Node access), a typed preload contract, and a loopback-only Scene Runtime bound to `127.0.0.1`.
+- The new `/live-control` implementation is functional plumbing, not a visual-only mock: `ManualLiveController` and `AudioPlaylistController` publish independently owned video/audio selections into Scene Runtime and receive browser media-end events through validated IPC/service paths.
+- The core refactor risk is ownership: prepared-script playback publishes from the renderer while Live State, Prepared Live Program, and Manual Live publish from the main process. All write the same last-writer-wins Scene Runtime presentation, without a command arbiter or explicit ownership handoff.
+- Audit also found that Manual Live's loop intent is not passed to the runtime (`activeLoop` is published as `false`), and that imports may attach up to 100 managed media layers concurrently. These are blockers to claiming no-frame-loss/long-session parity until fixed and tested.
+- No product code was changed during the audit. `CURRENT_ARCHITECTURE.md` now reflects the active manual video/audio command path and its refactor risks. Existing untracked archives remain untouched.
+
+**MVP Bản 1 - Manual Live Studio: implementation complete for the smallest vertical slice; live/OBS verification pending.** The new LIVE CONTROL page, independent main-process video/audio controllers, typed IPC bridge, and Scene Runtime ownership are implemented. Existing State Machine and prepared-script paths remain in place. This is not a full product-parity completion claim.
+
+## Latest work session - Manual Live Studio independent video/audio player
+
+- Added `ManualLiveController` and `AudioPlaylistController` as separate main-process services. Video owns playlist/loop/switching; audio owns queue/volume/auto-next.
+- Added multi-file media picking and typed `video:*` / `audio:*` IPC commands. Renderer access remains limited to `window.desktopApi`.
+- Added `/live-control` with Video Panel, Audio Panel, Live Status, import controls, transport controls, loop, volume, auto-next, and playlist views.
+- Scene Runtime now carries an independent audio pause hint so pausing or switching audio does not pause/restart video, and vice versa.
+- Validation: `pnpm typecheck` passed; focused Vitest passed 3 files / 15 tests; full unit suite passed 37 files / 209 tests; `pnpm test:electron-smoke` passed; Browser QA passed at desktop and mobile viewport; `git diff --check` passed.
+- Targeted ESLint passed for all changed/new files. Full-repo lint remains red on pre-existing `scene-runtime/runtime.js`, `LongVideoTimelineEditor.vue`, `ProjectStudioPage.vue`, and existing indentation warnings.
+- Known gaps: no real OBS Browser Source verification, no 30-minute media soak, and manual playlists are session-scoped rather than persisted across restart.
+- Existing `test:active-work-restart` timed out on its unrelated TTS locator, and `test:settings-persistence-smoke` could not find its renderer; neither is treated as MVP pass evidence.
 
 ## What now works
 
@@ -53,6 +72,15 @@ Investigate and reduce the 11.41% Scene Runtime visual diff, then run a real OBS
 
 ## Latest work session - parallel video/audio script playback
 
+## Latest work session - OBS-inspired LIVE CONTROL UI
+
+- Reworked `src/pages/LiveControlPage.vue` into a denser OBS-inspired operator surface: compact program toolbar, charcoal dock panels, clearer runtime/output status, and tighter playlist/transport controls.
+- Kept the existing typed IPC, controllers, Scene Runtime ownership, and video/audio independence unchanged.
+- Validation: `pnpm typecheck`, targeted ESLint, browser render check, no console errors, and Loop `OFF -> ON` interaction passed.
+- Follow-up: converted the control panels and status panel to stretchable dock layouts so the workspace no longer has a large unused lower area.
+
+## Latest work session - parallel video/audio script playback
+
 - Prepared script UI now models audio as an optional track inside a video script. The video remains the visible layer while the selected audio layer starts after the video reports a decoded frame.
 - Studio preview visibility and media activation both retain the active video when `activeAudioLayerId` is set, so playing audio no longer hides the video.
 - Script labels now state that video and audio play in parallel; audio mute and volume remain controllable from the script editor.
@@ -71,6 +99,14 @@ Investigate and reduce the 11.41% Scene Runtime visual diff, then run a real OBS
 - Audio-only script creation was removed from the source assignment path. Audio can only be attached to a video/video-avatar script and is started as the companion track in that same script.
 - The prepared-script editor again exposes separate mute and volume controls for the video audio and the parallel audio track.
 - Validation: `pnpm typecheck` passed; prepared playback and project validation tests passed (31 tests).
+
+## Audit session - MVP v1 independent video/audio control
+
+- Phase 1 audit completed from the current repository source, contracts, runtime, services, renderer, preload, IPC, tests, and status history.
+- Created `CURRENT_ARCHITECTURE.md` documenting the actual Electron flow, playback ownership, permitted change areas, protected components, and implementation risks.
+- Confirmed there are no dedicated `video:*` or `audio:*` IPC channels yet. The active Studio path is prepared-script playback; `ManualVideoPlaybackController` exists as a tested legacy controller but is not directly wired to the current UI.
+- No product code was changed. Existing untracked ZIP files were preserved.
+- Status: awaiting user approval of the audit before Phase 2 implementation.
 
 ## Latest correction - remove orphaned timeline clips
 

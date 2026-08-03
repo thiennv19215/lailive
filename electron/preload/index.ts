@@ -3,6 +3,7 @@ import type { DesktopApi } from '../../src/shared/contracts/desktop-api';
 import { IPC_CHANNELS } from '../../src/shared/contracts/ipc-channels';
 import { sceneRuntimePlaybackEndedSchema } from '../../src/shared/validation/scene-runtime';
 import { liveStateSnapshotSchema } from '../../src/shared/validation/live-state';
+import type { ManualAudioSnapshot, ManualVideoSnapshot } from '../../src/shared/contracts/manual-live';
 
 const api: DesktopApi = {
   app: {
@@ -38,8 +39,42 @@ const api: DesktopApi = {
   media: {
     check: (references) => ipcRenderer.invoke(IPC_CHANNELS.mediaCheck, { references }),
     pick: (kind, label) => ipcRenderer.invoke(IPC_CHANNELS.mediaPick, { kind, label }),
+    pickMany: (kind, label) => ipcRenderer.invoke(IPC_CHANNELS.mediaPickMany, { kind, label }),
     read: (reference) => ipcRenderer.invoke(IPC_CHANNELS.mediaRead, reference),
     convertVideoToGif: (reference) => ipcRenderer.invoke(IPC_CHANNELS.mediaConvertVideoToGif, reference),
+  },
+  manualLive: {
+    video: {
+      list: () => ipcRenderer.invoke(IPC_CHANNELS.manualVideoList),
+      import: (input) => ipcRenderer.invoke(IPC_CHANNELS.manualVideoImport, input),
+      play: () => ipcRenderer.invoke(IPC_CHANNELS.manualVideoPlay),
+      pause: () => ipcRenderer.invoke(IPC_CHANNELS.manualVideoPause),
+      stop: () => ipcRenderer.invoke(IPC_CHANNELS.manualVideoStop),
+      next: () => ipcRenderer.invoke(IPC_CHANNELS.manualVideoNext),
+      previous: () => ipcRenderer.invoke(IPC_CHANNELS.manualVideoPrevious),
+      setLoop: (loop) => ipcRenderer.invoke(IPC_CHANNELS.manualVideoSetLoop, { loop }),
+      onSnapshot: (listener) => {
+        const handler = (_event: Electron.IpcRendererEvent, payload: ManualVideoSnapshot): void => listener(payload);
+        ipcRenderer.on(IPC_CHANNELS.manualVideoSnapshot, handler);
+        return () => ipcRenderer.removeListener(IPC_CHANNELS.manualVideoSnapshot, handler);
+      },
+    },
+    audio: {
+      list: () => ipcRenderer.invoke(IPC_CHANNELS.manualAudioList),
+      import: (input) => ipcRenderer.invoke(IPC_CHANNELS.manualAudioImport, input),
+      play: () => ipcRenderer.invoke(IPC_CHANNELS.manualAudioPlay),
+      pause: () => ipcRenderer.invoke(IPC_CHANNELS.manualAudioPause),
+      stop: () => ipcRenderer.invoke(IPC_CHANNELS.manualAudioStop),
+      next: () => ipcRenderer.invoke(IPC_CHANNELS.manualAudioNext),
+      previous: () => ipcRenderer.invoke(IPC_CHANNELS.manualAudioPrevious),
+      setVolume: (volume) => ipcRenderer.invoke(IPC_CHANNELS.manualAudioSetVolume, { volume }),
+      setAutoNext: (autoNext) => ipcRenderer.invoke(IPC_CHANNELS.manualAudioSetAutoNext, { autoNext }),
+      onSnapshot: (listener) => {
+        const handler = (_event: Electron.IpcRendererEvent, payload: ManualAudioSnapshot): void => listener(payload);
+        ipcRenderer.on(IPC_CHANNELS.manualAudioSnapshot, handler);
+        return () => ipcRenderer.removeListener(IPC_CHANNELS.manualAudioSnapshot, handler);
+      },
+    },
   },
   live: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.liveGetSnapshot),

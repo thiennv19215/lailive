@@ -243,7 +243,7 @@ function layerBox(layer, imageIndex) {
 function updateLayerNode(root, layer, index, imageIndex, state) {
   const isText = layer.kind === 'text';
   const box = layerBox(layer, imageIndex);
-  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0 };
+  const presentation = state.presentation ?? { mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [], playbackRevision: 0, resumeActiveMedia: false, activePaused: true, activeMuted: true, activeVolume: 0, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0, activeAudioPaused: false };
   const managed = presentation.managedLayerIds.includes(layer.id);
   // A script-selected avatar owns its visibility; legacy idle/talking pairs keep their role behavior.
   const speechVisible = layer.kind !== 'avatar' || managed || layer.avatarState === 'none' || layer.avatarState === state.avatarState;
@@ -310,8 +310,9 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
           // DOM for preload, but only the active prepared/live command owns it.
           media.pause();
           media.currentTime = 0;
-        } else if (managed && (presentation.mode === 'paused' || presentation.activePaused || !active)) {
+        } else if (managed && ((layer.id === presentation.activeAudioLayerId ? presentation.activeAudioPaused : (presentation.mode === 'paused' || presentation.activePaused)) || !active)) {
           media.pause();
+          if (managed && presentation.mode === 'stopped') media.currentTime = 0;
         } else {
           if (managed && media.dataset.playbackRevision !== revision) {
             media.dataset.playbackRevision = revision;

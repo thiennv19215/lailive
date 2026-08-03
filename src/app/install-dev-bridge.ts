@@ -1,5 +1,6 @@
 import type { DesktopApi, SettingRecord } from '../shared/contracts/desktop-api';
-import { PROJECT_EXPORT_FORMAT, PROJECT_SCHEMA_VERSION, createDefaultProjects, createEmptyScene, type ProjectRecord } from '../shared/contracts/projects';
+import { PROJECT_EXPORT_FORMAT, PROJECT_SCHEMA_VERSION, createDefaultProjects, createEmptyScene, type ProjectMediaReference, type ProjectRecord } from '../shared/contracts/projects';
+import type { ManualAudioSnapshot, ManualVideoSnapshot } from '../shared/contracts/manual-live';
 import { GLOBAL_SETTINGS_KEY } from '../shared/contracts/global-settings';
 import { migrateProjectScene, projectCreateSchema, projectExportEnvelopeSchema, projectIdSchema, projectMediaCheckSchema, projectRecordSchema, projectSceneSchema, projectTitleSchema } from '../shared/validation/projects';
 import { globalSettingsSchema } from '../shared/validation/settings';
@@ -153,6 +154,29 @@ export function installDevBridge(): void {
       .filter((entry) => !search || `${entry.source} ${entry.message}`.toLocaleLowerCase('vi-VN').includes(search))
       .slice(-(query.limit ?? 500)).reverse().map((entry) => globalThis.structuredClone(entry));
   };
+  const manualVideoSnapshot: ManualVideoSnapshot = { playlist: [], currentIndex: null, state: 'idle', loop: false, revision: 0 };
+  const manualAudioSnapshot: ManualAudioSnapshot = { queue: [], currentIndex: null, state: 'idle', volume: 1, autoNext: true, revision: 0 };
+  const manualVideoListeners = new Set<(snapshot: ManualVideoSnapshot) => void>();
+  const manualAudioListeners = new Set<(snapshot: ManualAudioSnapshot) => void>();
+  const emitManualVideo = (): void => { for (const listener of manualVideoListeners) listener(globalThis.structuredClone(manualVideoSnapshot)); };
+  const emitManualAudio = (): void => { for (const listener of manualAudioListeners) listener(globalThis.structuredClone(manualAudioSnapshot)); };
+  const importManualMedia = (references: ProjectMediaReference[], kind: 'video' | 'audio'): void => {
+    if (kind === 'video') {
+      const current = new Map(manualVideoSnapshot.playlist.map((reference) => [reference.id, reference]));
+      references.filter((reference) => reference.kind === 'video').forEach((reference) => current.set(reference.id, reference));
+      manualVideoSnapshot.playlist = [...current.values()];
+      if (manualVideoSnapshot.currentIndex === null && manualVideoSnapshot.playlist.length > 0) manualVideoSnapshot.currentIndex = 0;
+      manualVideoSnapshot.revision += 1;
+      emitManualVideo();
+    } else {
+      const current = new Map(manualAudioSnapshot.queue.map((reference) => [reference.id, reference]));
+      references.filter((reference) => reference.kind === 'audio').forEach((reference) => current.set(reference.id, reference));
+      manualAudioSnapshot.queue = [...current.values()];
+      if (manualAudioSnapshot.currentIndex === null && manualAudioSnapshot.queue.length > 0) manualAudioSnapshot.currentIndex = 0;
+      manualAudioSnapshot.revision += 1;
+      emitManualAudio();
+    }
+  };
 
   const api: DesktopApi = {
     app: {
@@ -289,8 +313,34 @@ export function installDevBridge(): void {
     media: {
       check: async (references) => projectMediaCheckSchema.parse({ references }).references.map((reference) => ({ ...reference, exists: false })),
       pick: async () => null,
+      pickMany: async () => [],
       read: async () => null,
       convertVideoToGif: async () => { throw new Error('Chuyển video sang GIF cần chạy trong ứng dụng Electron.'); },
+    },
+    manualLive: {
+      video: {
+        list: async () => globalThis.structuredClone(manualVideoSnapshot),
+        import: async ({ references }) => { importManualMedia(references, 'video'); return globalThis.structuredClone(manualVideoSnapshot); },
+        play: async () => { manualVideoSnapshot.state = 'playing'; manualVideoSnapshot.revision += 1; emitManualVideo(); return globalThis.structuredClone(manualVideoSnapshot); },
+        pause: async () => { manualVideoSnapshot.state = 'paused'; manualVideoSnapshot.revision += 1; emitManualVideo(); return globalThis.structuredClone(manualVideoSnapshot); },
+        stop: async () => { manualVideoSnapshot.state = 'stopped'; manualVideoSnapshot.revision += 1; emitManualVideo(); return globalThis.structuredClone(manualVideoSnapshot); },
+        next: async () => { if (manualVideoSnapshot.playlist.length) manualVideoSnapshot.currentIndex = ((manualVideoSnapshot.currentIndex ?? -1) + 1) % manualVideoSnapshot.playlist.length; manualVideoSnapshot.revision += 1; emitManualVideo(); return globalThis.structuredClone(manualVideoSnapshot); },
+        previous: async () => { if (manualVideoSnapshot.playlist.length) manualVideoSnapshot.currentIndex = ((manualVideoSnapshot.currentIndex ?? 0) - 1 + manualVideoSnapshot.playlist.length) % manualVideoSnapshot.playlist.length; manualVideoSnapshot.revision += 1; emitManualVideo(); return globalThis.structuredClone(manualVideoSnapshot); },
+        setLoop: async (loop) => { manualVideoSnapshot.loop = loop; manualVideoSnapshot.revision += 1; emitManualVideo(); return globalThis.structuredClone(manualVideoSnapshot); },
+        onSnapshot: (listener) => { manualVideoListeners.add(listener); listener(globalThis.structuredClone(manualVideoSnapshot)); return () => manualVideoListeners.delete(listener); },
+      },
+      audio: {
+        list: async () => globalThis.structuredClone(manualAudioSnapshot),
+        import: async ({ references }) => { importManualMedia(references, 'audio'); return globalThis.structuredClone(manualAudioSnapshot); },
+        play: async () => { manualAudioSnapshot.state = 'playing'; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        pause: async () => { manualAudioSnapshot.state = 'paused'; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        stop: async () => { manualAudioSnapshot.state = 'stopped'; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        next: async () => { if (manualAudioSnapshot.queue.length) manualAudioSnapshot.currentIndex = ((manualAudioSnapshot.currentIndex ?? -1) + 1) % manualAudioSnapshot.queue.length; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        previous: async () => { if (manualAudioSnapshot.queue.length) manualAudioSnapshot.currentIndex = ((manualAudioSnapshot.currentIndex ?? 0) - 1 + manualAudioSnapshot.queue.length) % manualAudioSnapshot.queue.length; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        setVolume: async (volume) => { manualAudioSnapshot.volume = volume; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        setAutoNext: async (autoNext) => { manualAudioSnapshot.autoNext = autoNext; manualAudioSnapshot.revision += 1; emitManualAudio(); return globalThis.structuredClone(manualAudioSnapshot); },
+        onSnapshot: (listener) => { manualAudioListeners.add(listener); listener(globalThis.structuredClone(manualAudioSnapshot)); return () => manualAudioListeners.delete(listener); },
+      },
     },
     live: {
       getSnapshot: async () => globalThis.structuredClone(liveSnapshot),

@@ -18,7 +18,10 @@ import { AppResilienceService, type ResilienceStartupReport } from '../services/
 import { LiveStateEngine } from '../services/live-state-engine';
 import { PreparedLiveProgramController, type PreparedLiveProgramSnapshot } from '../services/prepared-live-program-controller';
 import { createDefaultScenePresentationState, type SceneRuntimeMediaEvent } from '../../src/shared/contracts/scene-runtime';
-import type { ProjectSceneDocument, ProjectSceneLayer } from '../../src/shared/contracts/projects';
+import { createEmptyScene, createProjectSceneLayer, type ProjectSceneDocument, type ProjectSceneLayer } from '../../src/shared/contracts/projects';
+import type { ManualAudioSnapshot, ManualVideoSnapshot } from '../../src/shared/contracts/manual-live';
+import { ManualLiveController } from '../services/manual-live-controller';
+import { AudioPlaylistController } from '../services/audio-playlist-controller';
 import { liveStateAudioSeekTime, type LiveRuntimeEvent, type LiveStateMedia, type LiveStateSnapshot } from '../../src/shared/contracts/live-state';
 
 let mainWindow: BrowserWindow | null = null;
@@ -34,6 +37,12 @@ let liveStateEngine: LiveStateEngine | null = null;
 let liveStateScene: ProjectSceneDocument | null = null;
 let preparedLiveProgramController: PreparedLiveProgramController | null = null;
 let preparedLiveProgramScene: ProjectSceneDocument | null = null;
+let manualVideoController: ManualLiveController | null = null;
+let audioPlaylistController: AudioPlaylistController | null = null;
+let manualLivePlaybackRevision = 0;
+let manualVideoControllerRevision = -1;
+let manualAudioResumeAtMs: number | null = null;
+let manualLiveScene: ProjectSceneDocument | null = null;
 const removeInternalDiagnostics: (() => void)[] = [];
 const liveService = new LiveSessionService();
 let smokeRendererReady = false;
@@ -157,6 +166,65 @@ function toLiveRuntimeEvent(event: SceneRuntimeMediaEvent): LiveRuntimeEvent | n
   if (event.kind === 'ended') return { kind: 'ended', revision: event.revision, currentTime: event.currentTime ?? undefined };
   if (event.kind === 'progress') return { kind: 'progress', revision: event.revision, currentTime: event.currentTime ?? 0 };
   return { kind: 'ready', revision: event.revision };
+}
+
+function manualVideoLayerId(referenceId: string): string { return `manual-video-${referenceId}`; }
+function manualAudioLayerId(referenceId: string): string { return `manual-audio-${referenceId}`; }
+
+function createManualLiveScene(video: ManualVideoSnapshot, audio: ManualAudioSnapshot): ProjectSceneDocument {
+  const scene = createEmptyScene();
+  scene.mediaReferences = [...video.playlist, ...audio.queue].map((reference) => ({ ...reference }));
+  scene.layers = [
+    ...video.playlist.map((reference) => {
+      const layer = createProjectSceneLayer(manualVideoLayerId(reference.id), reference.label, 'video', { type: 'media', assetId: null, mediaReferenceId: reference.id });
+      layer.fitMode = 'cover';
+      layer.muted = true;
+      layer.volume = 0;
+      return layer;
+    }),
+    ...audio.queue.map((reference) => createProjectSceneLayer(manualAudioLayerId(reference.id), reference.label, 'audio', { type: 'media', assetId: null, mediaReferenceId: reference.id })),
+  ];
+  return scene;
+}
+
+function publishManualLiveScene(): void {
+  if (!sceneRuntimeService || !manualVideoController || !audioPlaylistController) return;
+  const video = manualVideoController.snapshot();
+  const audio = audioPlaylistController.snapshot();
+  manualLiveScene = createManualLiveScene(video, audio);
+  const presentation = createDefaultScenePresentationState();
+  const videoChanged = video.revision !== manualVideoControllerRevision;
+  if (videoChanged) {
+    manualVideoControllerRevision = video.revision;
+    manualLivePlaybackRevision += 1;
+  }
+  presentation.playbackRevision = manualLivePlaybackRevision;
+  presentation.activeScriptId = manualLiveScene.layers.length > 0 ? 'manual-live' : null;
+  presentation.mode = video.state === 'playing' ? 'playing' : video.state === 'paused' ? 'paused' : video.state === 'stopped' ? 'stopped' : 'idle';
+  const activeVideo = video.currentIndex === null || video.state === 'stopped' ? null : video.playlist[video.currentIndex];
+  const activeAudio = audio.currentIndex === null || audio.state === 'stopped' ? null : audio.queue[audio.currentIndex];
+  presentation.activeLayerId = activeVideo ? manualVideoLayerId(activeVideo.id) : null;
+  presentation.activeAudioLayerId = activeAudio ? manualAudioLayerId(activeAudio.id) : null;
+  presentation.managedLayerIds = manualLiveScene.layers.map((layer) => layer.id);
+  presentation.activePaused = video.state !== 'playing';
+  presentation.activeMuted = true;
+  presentation.activeVolume = 0;
+  presentation.activeLoop = false;
+  presentation.activeAudioMuted = false;
+  presentation.activeAudioVolume = audio.volume;
+  presentation.activeAudioPaused = audio.state !== 'playing';
+  presentation.resumeActiveMedia = false;
+  presentation.resumeAtMs = null;
+  presentation.audioResumeAtMs = videoChanged && activeAudio ? manualAudioResumeAtMs : null;
+  presentation.preloadLayerIds = manualLiveScene.layers.map((layer) => layer.id);
+  try {
+    sceneRuntimeService.publish(manualLiveScene, 'idle', presentation);
+  } catch (error) {
+    diagnosticsService?.recordThrottled('manual-live:scene-publish', 5_000, {
+      level: 'error', source: 'manual-live', message: 'Manual Live scene publish failed.',
+      details: { code: error instanceof Error ? error.message : String(error) },
+    });
+  }
 }
 
 app.setName('AI Livestream');
@@ -297,6 +365,8 @@ app.whenReady().then(async () => {
   shopService = new ShopService(database, app.getPath('userData'));
   liveStateEngine = new LiveStateEngine();
   preparedLiveProgramController = new PreparedLiveProgramController();
+  manualVideoController = new ManualLiveController();
+  audioPlaylistController = new AudioPlaylistController();
   const appRoot = app.getAppPath();
   sceneRuntimeService = new SceneRuntimeService({
     rendererDirectory: path.join(appRoot, 'scene-runtime'),
@@ -425,7 +495,22 @@ app.whenReady().then(async () => {
   }));
   removeInternalDiagnostics.push(liveStateEngine.subscribe((snapshot) => publishLiveStateSnapshot(snapshot)));
   removeInternalDiagnostics.push(preparedLiveProgramController.subscribe((snapshot) => publishPreparedLiveProgramSnapshot(snapshot)));
+  removeInternalDiagnostics.push(manualVideoController.subscribe(() => publishManualLiveScene()));
+  removeInternalDiagnostics.push(audioPlaylistController.subscribe(() => publishManualLiveScene()));
   removeInternalDiagnostics.push(sceneRuntimeService.subscribeMediaEvent((event) => {
+    const manualVideo = manualVideoController?.snapshot();
+    const manualAudio = audioPlaylistController?.snapshot();
+    if (manualLiveScene && event.revision === manualLivePlaybackRevision) {
+      if (event.kind === 'progress' && manualAudio && manualAudio.currentIndex !== null && event.layerId === manualAudioLayerId(manualAudio.queue[manualAudio.currentIndex]?.id ?? '') && event.currentTime !== null) {
+        manualAudioResumeAtMs = Math.round(event.currentTime * 1_000);
+      }
+      if (event.kind === 'ended' && manualVideo?.currentIndex !== null && manualVideo?.state === 'playing' && event.layerId === manualVideoLayerId(manualVideo.playlist[manualVideo.currentIndex]?.id ?? '')) {
+        manualVideoController?.onEnded();
+      } else if (event.kind === 'ended' && manualAudio?.currentIndex !== null && manualAudio?.state === 'playing' && event.layerId === manualAudioLayerId(manualAudio.queue[manualAudio.currentIndex]?.id ?? '')) {
+        audioPlaylistController?.onEnded();
+      }
+      return;
+    }
     const programController = preparedLiveProgramController;
     const program = programController?.snapshot();
     if (preparedLiveProgramScene && program && programController) {
@@ -520,6 +605,8 @@ app.whenReady().then(async () => {
       app.quit();
     },
     openAuxiliaryWindow,
+    manualVideoController,
+    audioPlaylistController,
   );
   await createWindow();
   if (sceneRuntimeSmokeMode) await createSceneRuntimeSmokeWindow();

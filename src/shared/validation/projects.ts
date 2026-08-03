@@ -263,6 +263,7 @@ export const projectMediaPickSchema = z.object({
   kind: projectMediaKindSchema,
   label: z.string().trim().min(1).max(120),
 });
+export const projectMediaPickManySchema = projectMediaPickSchema;
 export const projectImportSchema = z.object({ data: z.string().min(1).max(5_000_000) });
 const portableProjectRecordSchema = projectRecordSchema.omit({ scene: true }).extend({ scene: z.unknown() });
 export const projectExportEnvelopeSchema = z.object({

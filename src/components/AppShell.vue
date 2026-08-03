@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight, ExternalLink, LayoutGrid, LayoutTemplate, LogOut, Plus, RefreshCw, Settings, ShieldCheck, X } from '@lucide/vue';
+import { ChevronDown, ChevronRight, ExternalLink, LayoutGrid, LayoutTemplate, LogOut, Plus, Radio, RefreshCw, Settings, ShieldCheck, X } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { AUXILIARY_WINDOW_META, AUXILIARY_WINDOW_NAMES, type AuxiliaryWindowName } from '../shared/contracts/auxiliary-windows';
@@ -105,6 +105,7 @@ function saveProfile(): void {
       <nav class="primary-nav" aria-label="Điều hướng chính">
         <RouterLink to="/" :class="{ active: route.name === 'projects' }"><LayoutGrid :size="20" />Trang chủ</RouterLink>
         <RouterLink to="/templates" :class="{ active: route.name === 'templates' }"><LayoutTemplate :size="20" />Mẫu</RouterLink>
+        <RouterLink to="/live-control" :class="{ active: route.name === 'live-control' }"><Radio :size="20" />LIVE CONTROL</RouterLink>
         <RouterLink to="/settings" :class="{ active: route.name === 'settings' }"><Settings :size="20" />Cài đặt</RouterLink>
       </nav>
     </aside>
