@@ -42,7 +42,7 @@ async function waitForRuntimePage(context, runtimeUrl) {
   throw new Error('Dedicated scene runtime smoke window was not found.');
 }
 
-const child = spawn(electronPath, ['.', '--ui-capture', '--scene-runtime-smoke', `--remote-debugging-port=${port}`], {
+const child = spawn(electronPath, ['.', '--ui-capture', '--scene-runtime-smoke', '--force-device-scale-factor=1', `--remote-debugging-port=${port}`], {
   cwd: process.cwd(),
   env: {
     ...process.env,
@@ -257,37 +257,67 @@ try {
     const talking = globalThis.document.querySelector(`[data-layer-id="${runtimeTalkingId}"]`);
     return idle && talking && globalThis.getComputedStyle(idle).opacity === '1' && globalThis.getComputedStyle(talking).opacity === '0';
   }, { idleId, talkingId });
-  await editorPage.addStyleTag({ content: `.studio-recovery-page .preview-region, .studio-recovery-page .studio-col-center { height: auto !important; max-height: none !important; overflow: visible !important; } .studio-recovery-page .live-frame { width: 338px !important; height: 600px !important; max-width: none !important; max-height: none !important; } .scene-layer-toolbar, .scene-selection, .scene-snap-guide, [data-runtime-layer-id="${gifId}"], [data-runtime-layer-id="${textId}"] { display: none !important; }` });
+  // Browser Source is a deliberately compact window in this smoke. Match its
+  // scene to the actual Studio preview box rather than capturing either page
+  // outside its visible viewport.
+  await editorPage.addStyleTag({ content: `.studio-canvas-wrap, .studio-grid { overflow: visible !important; } .scene-layer-toolbar, .scene-selection, .scene-snap-guide, [data-runtime-layer-id="${gifId}"], [data-runtime-layer-id="${textId}"] { display: none !important; }` });
   await editorPage.getByRole('button', { name: 'Hiá»‡n lÆ°á»›i canvas' }).click().catch(() => undefined);
   const editorScenePath = path.join(artifactDirectory, 'editor-scene.png');
   const runtimeRawPath = path.join(artifactDirectory, 'browser-scene-raw.png');
   const runtimeScenePath = path.join(artifactDirectory, 'browser-scene.png');
-  await editorPage.locator('.live-frame').screenshot({ path: editorScenePath });
-  await runtimePage.locator('#scene').screenshot({ path: runtimeRawPath, omitBackground: true });
+  const editorCaptureBox = await editorPage.locator('.live-frame').boundingBox();
+  if (!editorCaptureBox || editorCaptureBox.width <= 0 || editorCaptureBox.height <= 0) throw new Error('Studio live frame capture box was missing.');
+  await runtimePage.evaluate(({ width, height, runtimeBackgroundId }) => {
+    const setFixedStyle = (element, property, value) => element?.style.setProperty(property, value, 'important');
+    const sceneElement = globalThis.document.querySelector('#scene');
+    const backgroundElement = globalThis.document.querySelector(`[data-layer-id="${runtimeBackgroundId}"]`);
+    setFixedStyle(sceneElement, 'width', `${width}px`);
+    setFixedStyle(sceneElement, 'height', `${height}px`);
+    setFixedStyle(sceneElement, 'aspect-ratio', `${width} / ${height}`);
+    setFixedStyle(backgroundElement, 'left', '0');
+    setFixedStyle(backgroundElement, 'top', '0');
+    setFixedStyle(backgroundElement, 'width', '100%');
+    setFixedStyle(backgroundElement, 'height', '100%');
+  }, { width: editorCaptureBox.width, height: editorCaptureBox.height, runtimeBackgroundId: backgroundId });
+  await editorPage.locator('.live-frame').screenshot({ path: editorScenePath, scale: 'css' });
+  await runtimePage.locator('#scene').screenshot({ path: runtimeRawPath, scale: 'css' });
   const editorCapture = PNG.sync.read(fs.readFileSync(editorScenePath));
   const runtimeCapture = PNG.sync.read(fs.readFileSync(runtimeRawPath));
-  const scaleX = editorCapture.width / runtimeCapture.width;
-  const scaleY = editorCapture.height / runtimeCapture.height;
-  if (Math.abs(scaleX - scaleY) > 0.05) {
-    throw new Error(`Editor/runtime capture geometry diverged: ${editorCapture.width}x${editorCapture.height} vs ${runtimeCapture.width}x${runtimeCapture.height}`);
+  if (Math.abs(editorCapture.width - runtimeCapture.width) > 1 || Math.abs(editorCapture.height - runtimeCapture.height) > 1) {
+    throw new Error(`Editor/runtime capture pixels diverged: ${editorCapture.width}x${editorCapture.height} vs ${runtimeCapture.width}x${runtimeCapture.height}.`);
   }
-  const normalizedRuntime = new PNG({ width: editorCapture.width, height: editorCapture.height });
-  for (let y = 0; y < editorCapture.height; y += 1) {
-    for (let x = 0; x < editorCapture.width; x += 1) {
-      const srcX = Math.min(runtimeCapture.width - 1, Math.floor(x / scaleX));
-      const srcY = Math.min(runtimeCapture.height - 1, Math.floor(y / scaleY));
-      const srcIdx = (srcY * runtimeCapture.width + srcX) * 4;
-      const dstIdx = (y * editorCapture.width + x) * 4;
-      normalizedRuntime.data[dstIdx] = runtimeCapture.data[srcIdx];
-      normalizedRuntime.data[dstIdx + 1] = runtimeCapture.data[srcIdx + 1];
-      normalizedRuntime.data[dstIdx + 2] = runtimeCapture.data[srcIdx + 2];
-      normalizedRuntime.data[dstIdx + 3] = runtimeCapture.data[srcIdx + 3];
+  const captureWidth = runtimeCapture.width;
+  const captureHeight = runtimeCapture.height;
+  const normalizeCapture = (capture) => {
+    if (capture.width === captureWidth && capture.height === captureHeight) return capture;
+    const normalized = new PNG({ width: captureWidth, height: captureHeight });
+    for (let y = 0; y < captureHeight; y += 1) {
+      const sourceY = (y + 0.5) * capture.height / captureHeight - 0.5;
+      const y0 = Math.max(0, Math.floor(sourceY));
+      const y1 = Math.min(capture.height - 1, y0 + 1);
+      const yWeight = sourceY - y0;
+      for (let x = 0; x < captureWidth; x += 1) {
+        const sourceX = (x + 0.5) * capture.width / captureWidth - 0.5;
+        const x0 = Math.max(0, Math.floor(sourceX));
+        const x1 = Math.min(capture.width - 1, x0 + 1);
+        const xWeight = sourceX - x0;
+        const index = (y * captureWidth + x) * 4;
+        for (let channel = 0; channel < 4; channel += 1) {
+          const top = capture.data[(y0 * capture.width + x0) * 4 + channel] * (1 - xWeight) + capture.data[(y0 * capture.width + x1) * 4 + channel] * xWeight;
+          const bottom = capture.data[(y1 * capture.width + x0) * 4 + channel] * (1 - xWeight) + capture.data[(y1 * capture.width + x1) * 4 + channel] * xWeight;
+          normalized.data[index + channel] = Math.round(top * (1 - yWeight) + bottom * yWeight);
+        }
+      }
     }
-  }
-  fs.writeFileSync(runtimeScenePath, PNG.sync.write(normalizedRuntime));
-  const visualDiff = new PNG({ width: editorCapture.width, height: editorCapture.height });
-  const differentPixels = pixelmatch(editorCapture.data, normalizedRuntime.data, visualDiff.data, editorCapture.width, editorCapture.height, { threshold: 0.1 });
-  const visualDifferenceRatio = differentPixels / (editorCapture.width * editorCapture.height);
+    return normalized;
+  };
+  const comparableEditor = normalizeCapture(editorCapture);
+  const comparableRuntime = normalizeCapture(runtimeCapture);
+  fs.writeFileSync(editorScenePath, PNG.sync.write(comparableEditor));
+  fs.writeFileSync(runtimeScenePath, PNG.sync.write(comparableRuntime));
+  const visualDiff = new PNG({ width: captureWidth, height: captureHeight });
+  const differentPixels = pixelmatch(comparableEditor.data, comparableRuntime.data, visualDiff.data, captureWidth, captureHeight, { threshold: 0.1 });
+  const visualDifferenceRatio = differentPixels / (captureWidth * captureHeight);
   fs.writeFileSync(path.join(artifactDirectory, 'editor-browser-diff.png'), PNG.sync.write(visualDiff));
   if (visualDifferenceRatio >= 0.03) throw new Error(`Editor/runtime visual difference was ${(visualDifferenceRatio * 100).toFixed(2)}%.`);
   const finalStatus = await editorPage.evaluate(() => globalThis.window.desktopApi.sceneRuntime.getStatus());

@@ -4,6 +4,11 @@
 
 **Phase 1 - Timeline Engine ownership refactor: complete for the first controller slice; OBS and long-run media verification remain pending.** A main-process Timeline Playback Controller now arbitrates a single Browser Source owner across Studio, Live State, Prepared Live Program, and Manual Live. This is not a product-parity completion claim.
 
+## Latest work session - Scene Runtime visual smoke capture
+
+- Repaired the Scene Runtime visual gate so it compares the visible Studio canvas against a same-size Browser Source canvas. The harness now removes only editor affordances, avoids capturing beyond either target's viewport, allows the test-only Studio canvas to render outside its dock clip, and normalizes the one-pixel Electron screenshot rounding difference with bilinear sampling.
+- `pnpm test:scene-runtime-smoke` now passes with editor-to-runtime propagation in 43ms and a 2.50% pixel difference. This validates the no-blank-frame Browser Source presentation for the deterministic scene fixture; it is not real OBS or long-video soak evidence.
+
 ## Latest work session - Timeline Engine ownership and independent media continuity
 
 - Added `TimelinePlaybackController` as the sole Scene Runtime publication boundary. Its owner changes only after an explicit operator handoff and that source's next accepted publication; passive/autosave publishers cannot replace active program output.
