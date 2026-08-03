@@ -17,6 +17,8 @@ import type { ShopConfig, ShopProductMapping, ShopScheduleItem, ShopSnapshot } f
 import { shopConfigSchema, shopMappingsSchema, shopScheduleSchema } from '../shared/validation/shop';
 import type { DiagnosticLogEntry, DiagnosticLogQuery, DiagnosticsSnapshot, RecoveryNotice } from '../shared/contracts/diagnostics';
 import { queueDiagnosticEventSchema } from '../shared/validation/diagnostics';
+import { DEFAULT_LIVE_STATE_DEFINITIONS, type LiveStateSnapshot } from '../shared/contracts/live-state';
+import { playStateCommandSchema } from '../shared/validation/live-state';
 
 const storagePrefix = 'ai-livestream.dev-setting.';
 const projectStorageKey = 'ai-livestream.dev-projects.v1';
@@ -87,6 +89,15 @@ export function installDevBridge(): void {
   let obsBrowserSourceReady = false;
   let obsProgramSceneActive = false;
   let obsVirtualCameraActive = false;
+  let liveStateSnapshot: LiveStateSnapshot = {
+    mode: 'idle', state: 'IDLE', revision: 0, currentTime: 0, ready: false,
+    definition: DEFAULT_LIVE_STATE_DEFINITIONS.IDLE, resumeStack: [], errorMessage: null,
+  };
+  const liveStateListeners = new Set<(snapshot: LiveStateSnapshot) => void>();
+  const emitLiveState = (): void => {
+    const snapshot = globalThis.structuredClone(liveStateSnapshot);
+    for (const listener of liveStateListeners) listener(snapshot);
+  };
   let shopConfig: ShopConfig = { kind: 'mock', executablePath: '', dashboardUrl: 'https://seller-vn.tiktok.com/compass/live/product' };
   let shopSnapshot: ShopSnapshot = {
     connectionState: 'closed', scheduleState: 'idle', products: [], mappings: [], schedule: [],
@@ -440,6 +451,33 @@ export function installDevBridge(): void {
       },
       onTtsEvent: () => () => undefined,
       onPlaybackEnded: () => () => undefined,
+    },
+    liveState: {
+      getSnapshot: async () => globalThis.structuredClone(liveStateSnapshot),
+      configure: async (_projectId, scene) => ({
+        enabled: scene.stateMachineSettings.enabled,
+        message: scene.stateMachineSettings.enabled ? null : 'State Machine chua duoc bat cho du an nay.',
+      }),
+      play: async (command) => {
+        const parsed = playStateCommandSchema.parse(command);
+        liveStateSnapshot = {
+          mode: parsed.state === 'IDLE' ? 'idle' : 'loading',
+          state: parsed.state,
+          revision: liveStateSnapshot.revision + 1,
+          currentTime: 0,
+          ready: false,
+          definition: DEFAULT_LIVE_STATE_DEFINITIONS[parsed.state],
+          resumeStack: [],
+          errorMessage: null,
+        };
+        emitLiveState();
+        return true;
+      },
+      onSnapshot: (listener) => {
+        liveStateListeners.add(listener);
+        listener(globalThis.structuredClone(liveStateSnapshot));
+        return () => liveStateListeners.delete(listener);
+      },
     },
     obs: {
       getConfig: async () => ({ ...obsConfig, hasPassword: Boolean(obsConfig.password) }),

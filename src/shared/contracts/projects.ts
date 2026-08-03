@@ -1,4 +1,6 @@
-export const PROJECT_SCHEMA_VERSION = 19 as const;
+import { DEFAULT_LIVE_STATE_DEFINITIONS, type LiveStateDefinitions } from './live-state';
+
+export const PROJECT_SCHEMA_VERSION = 22 as const;
 export const PROJECT_EXPORT_FORMAT = 'ai-livestream-project' as const;
 export const LAST_OPENED_PROJECT_KEY = 'project.last-opened-id' as const;
 
@@ -112,6 +114,37 @@ export interface ProjectPreparedScriptSettings {
   scripts: ProjectPreparedScript[];
 }
 
+// This remains parallel to legacy playback settings until operators explicitly enable it.
+export interface ProjectStateMachineSettings {
+  enabled: boolean;
+  definitions: LiveStateDefinitions;
+  // The source video shown as one operator-editable timeline. A zero duration
+  // means its metadata has not been inspected yet.
+  masterVideoAssetId: string | null;
+  durationSeconds: number;
+}
+
+// A single pre-recorded visual program with independently routed audio cues.
+// It deliberately lives beside the legacy State Machine while operators migrate.
+export type PreparedLiveProgramCueState = 'WELCOME' | 'CONSULT' | 'DEMO' | 'CTA' | 'THANKS';
+export type PreparedLiveProgramCueBehavior = 'interrupt-resume' | 'jump';
+
+export interface PreparedLiveProgramCue {
+  state: PreparedLiveProgramCueState;
+  visualStartAt: number;
+  visualEndAt: number;
+  audioLayerId: string | null;
+  behavior: PreparedLiveProgramCueBehavior;
+}
+
+export interface ProjectPreparedLiveProgramSettings {
+  enabled: boolean;
+  visualVideoLayerId: string | null;
+  // This long-form voice track follows the visual program whenever no cue audio is active.
+  baseAudioLayerId: string | null;
+  cues: PreparedLiveProgramCue[];
+}
+
 export interface ProjectSceneLayer {
   id: string;
   name: string;
@@ -151,6 +184,8 @@ export interface ProjectSceneDocument {
   livestreamSettings: ProjectLivestreamSettings;
   manualPlaybackSettings: ProjectManualPlaybackSettings;
   preparedScriptSettings: ProjectPreparedScriptSettings;
+  stateMachineSettings: ProjectStateMachineSettings;
+  preparedLiveProgram: ProjectPreparedLiveProgramSettings;
   aiSettings: AiReplySettings;
   ttsSettings: TtsProjectSettings;
   products: ProductCatalogItem[];
@@ -227,10 +262,35 @@ export function createEmptyScene(): ProjectSceneDocument {
       enabled: true,
       scripts: [],
     },
+    stateMachineSettings: createDefaultStateMachineSettings(),
+    preparedLiveProgram: createDefaultPreparedLiveProgramSettings(),
     aiSettings: createDefaultAiReplySettings(),
     ttsSettings: createDefaultTtsProjectSettings(),
     products: [],
     mediaReferences: [],
+  };
+}
+
+export function createDefaultPreparedLiveProgramSettings(): ProjectPreparedLiveProgramSettings {
+  return {
+    enabled: false,
+    visualVideoLayerId: null,
+    baseAudioLayerId: null,
+    cues: [],
+  };
+}
+
+export function createDefaultStateMachineSettings(): ProjectStateMachineSettings {
+  return {
+    enabled: false,
+    masterVideoAssetId: null,
+    durationSeconds: 0,
+    definitions: Object.fromEntries(
+      Object.entries(DEFAULT_LIVE_STATE_DEFINITIONS).map(([state, definition]) => [
+        state,
+        { ...definition, timeline: definition.timeline.map((cue) => ({ ...cue })) },
+      ]),
+    ) as LiveStateDefinitions,
   };
 }
 

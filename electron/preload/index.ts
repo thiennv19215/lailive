@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi } from '../../src/shared/contracts/desktop-api';
 import { IPC_CHANNELS } from '../../src/shared/contracts/ipc-channels';
 import { sceneRuntimePlaybackEndedSchema } from '../../src/shared/validation/scene-runtime';
+import { liveStateSnapshotSchema } from '../../src/shared/validation/live-state';
 
 const api: DesktopApi = {
   app: {
@@ -89,6 +90,19 @@ const api: DesktopApi = {
       };
       ipcRenderer.on(IPC_CHANNELS.sceneRuntimeTtsEvent, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.sceneRuntimeTtsEvent, listener);
+    },
+  },
+  liveState: {
+    getSnapshot: async () => liveStateSnapshotSchema.parse(await ipcRenderer.invoke(IPC_CHANNELS.liveStateGetSnapshot)),
+    configure: (projectId, scene) => ipcRenderer.invoke(IPC_CHANNELS.liveStateConfigure, { projectId, scene }),
+    play: (command) => ipcRenderer.invoke(IPC_CHANNELS.liveStatePlay, command),
+    onSnapshot: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const parsed = liveStateSnapshotSchema.safeParse(payload);
+        if (parsed.success) listener(parsed.data);
+      };
+      ipcRenderer.on(IPC_CHANNELS.liveStateSnapshot, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.liveStateSnapshot, handler);
     },
   },
   obs: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createProjectSceneLayer } from '../../src/shared/contracts/projects';
-import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, isStickerLayer, previewLayerBox, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
+import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, isStickerLayer, previewImageIndex, previewLayerBox, previewLayerStyle, previewTransform, resolvePreviewSource } from '../../src/shared/studio/preview';
 
 describe('Studio preview source and geometry', () => {
   it('does not render implicit name-based or empty sources', () => {
@@ -47,6 +47,16 @@ describe('Studio preview source and geometry', () => {
     expect(isDefaultBackgroundLayer(background)).toBe(true);
     expect(previewLayerBox(background, 4)).toEqual({ left: 0, top: 0, width: 100, height: 100 });
     expect(previewLayerStyle(background, 5, 4)).toMatchObject({ left: '0%', top: '0%', width: '100%', height: '100%' });
+  });
+
+  it('does not let an avatar change a local image background layout index', () => {
+    const avatar = createProjectSceneLayer('avatar', 'Host', 'avatar', { type: 'builtin', assetId: 'template-host', mediaReferenceId: null });
+    const background = createProjectSceneLayer('background', 'Local background', 'image', { type: 'media', assetId: null, mediaReferenceId: 'background-file' });
+    const layers = [avatar, background];
+
+    expect(previewImageIndex(layers, avatar)).toBe(-1);
+    expect(previewImageIndex(layers, background)).toBe(0);
+    expect(previewLayerBox(background, previewImageIndex(layers, background))).toEqual({ left: 0, top: 0, width: 100, height: 100 });
   });
 
   it('adds built-in stickers as a compact overlay instead of a full-canvas image', () => {

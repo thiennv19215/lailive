@@ -1,4 +1,5 @@
-/* global EventSource, HTMLCanvasElement, HTMLMediaElement, HTMLVideoElement, cancelAnimationFrame, crypto, document, fetch, requestAnimationFrame */
+/* global EventSource, HTMLCanvasElement, HTMLImageElement, HTMLMediaElement, HTMLVideoElement, cancelAnimationFrame, crypto, document, fetch, requestAnimationFrame */
+import { RuntimeMediaManager } from './media-manager.js';
 const sceneElement = document.querySelector('#scene');
 const statusElement = document.querySelector('#status');
 const clientId = `scene-${crypto.randomUUID()}`;
@@ -13,6 +14,17 @@ let lastChromaFrameAt = 0;
 let displayedTimelineLayerId = null;
 let activeTtsRequestId = null;
 let activeTtsAudio = null;
+
+const mediaManager = new RuntimeMediaManager({
+  reportEvent: (event) => {
+    const revision = currentState?.presentation?.playbackRevision;
+    if (!Number.isInteger(revision)) return;
+    void fetch('/media-event', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientId, revision, ...event }),
+    }).catch(() => undefined);
+  },
+});
 
 function report(level, message) {
   void fetch('/log', {
@@ -80,6 +92,59 @@ function sourceSignature(layer, scene) {
   return `${layer.kind}:${mediaKind(layer, scene)}:${layer.source.type}:${layer.source.assetId ?? ''}:${layer.source.mediaReferenceId ?? ''}:${sourceVersion}`;
 }
 
+function isPresentationMedia(layerId) {
+  const presentation = currentState?.presentation;
+  if (!presentation || !presentation.activeScriptId) return false;
+  return presentation.activeLayerId === layerId
+    || presentation.activeAudioLayerId === layerId;
+}
+
+function reportActiveMediaReady(layerId, media, signature) {
+  const presentation = currentState?.presentation;
+  if (!isPresentationMedia(layerId) || !presentation || media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+  const revision = String(presentation.playbackRevision);
+  if (media.dataset.readyRevision === revision) return;
+  media.dataset.readyRevision = revision;
+  mediaManager.reportEvent({ kind: 'ready', layerId, signature, currentTime: media.currentTime });
+}
+
+function mediaSourceUrl(layer, scene) {
+  const sourceId = layer.source.type === 'builtin' ? layer.source.assetId : layer.source.mediaReferenceId;
+  return `/assets/${encodeURIComponent(sourceId)}?v=${encodeURIComponent(sourceSignature(layer, scene))}`;
+}
+
+function preloadPresentationMedia(state) {
+  const presentation = state.presentation;
+  if (!presentation) return;
+  const requestedIds = new Set([
+    presentation.pendingLayerId,
+    presentation.pendingAudioLayerId,
+    presentation.pendingAvatarLayerId,
+    presentation.preloadLayerId,
+    ...(Array.isArray(presentation.preloadLayerIds) ? presentation.preloadLayerIds : []),
+  ].filter(Boolean));
+  for (const layer of state.scene.layers) {
+    if (!requestedIds.has(layer.id) || !isRenderable(layer)) continue;
+    const kind = mediaKind(layer, state.scene);
+    if (kind === 'image') continue;
+    void mediaManager.preload({
+      signature: sourceSignature(layer, state.scene), kind, sourceUrl: mediaSourceUrl(layer, state.scene),
+      resumeAtMs: presentationResumeAtMs(presentation, layer.id),
+    });
+  }
+}
+
+function presentationResumeAtMs(presentation, layerId) {
+  if (layerId === presentation.activeAudioLayerId || layerId === presentation.pendingAudioLayerId) {
+    // Older timeline snapshots have no dedicated hint, so retain their shared
+    // resume behavior. State-driven audio always supplies its own offset.
+    return Number.isFinite(presentation.audioResumeAtMs)
+      ? presentation.audioResumeAtMs
+      : Number.isFinite(presentation.resumeAtMs) ? presentation.resumeAtMs : null;
+  }
+  return Number.isFinite(presentation.resumeAtMs) ? presentation.resumeAtMs : null;
+}
+
 function isRenderable(layer) {
   if (layer.kind === 'text') return true;
   return layer.source.type === 'builtin' ? Boolean(layer.source.assetId) : layer.source.type === 'media' && Boolean(layer.source.mediaReferenceId);
@@ -113,25 +178,36 @@ function createLayerNode(layer, state) {
   const sourceId = layer.source.type === 'builtin' ? layer.source.assetId : layer.source.mediaReferenceId;
   if (layer.kind !== 'text' && sourceId) {
     const renderedKind = mediaKind(layer, state.scene);
-    const media = document.createElement(renderedKind === 'video' ? 'video' : renderedKind === 'audio' ? 'audio' : 'img');
-    media.src = `/assets/${encodeURIComponent(sourceId)}?v=${encodeURIComponent(sourceSignature(layer, state.scene))}`;
+    const signature = sourceSignature(layer, state.scene);
+    const media = mediaManager.acquire({ signature, kind: renderedKind, sourceUrl: mediaSourceUrl(layer, state.scene) });
     media.dataset.media = 'source';
     if (media instanceof HTMLMediaElement) {
-      media.autoplay = true;
+      // Audio is command-owned: preloading it must never make it audible.
+      // `updateLayerNode` starts it only after a presentation selects the layer.
+      media.autoplay = renderedKind !== 'audio';
       media.preload = 'auto';
       if (media instanceof HTMLVideoElement) media.playsInline = true;
       media.addEventListener('ended', () => {
         const presentation = currentState?.presentation;
         // A displayed predecessor can end while its successor is decoding.
-        // It must never complete the successor's script.
-        if (!presentation || presentation.pendingLayerId || presentation.activeLayerId !== layer.id || !presentation.activeScriptId) return;
-        void fetch('/playback-ended', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ scriptId: presentation.activeScriptId, layerId: layer.id, playbackRevision: presentation.playbackRevision }),
-        }).catch(() => undefined);
+        // A cue voice ends independently from the master visual. Only a
+        // visual may use the legacy playback-ended endpoint.
+        if (!presentation || presentation.pendingLayerId || !presentation.activeScriptId || !isPresentationMedia(layer.id)) return;
+        if (presentation.activeLayerId === layer.id) {
+          void fetch('/playback-ended', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ scriptId: presentation.activeScriptId, layerId: layer.id, playbackRevision: presentation.playbackRevision }),
+          }).catch(() => undefined);
+        }
+        mediaManager.reportEvent({ kind: 'ended', layerId: layer.id, signature, currentTime: media.currentTime });
+      });
+      media.addEventListener('timeupdate', () => {
+        if (isPresentationMedia(layer.id)) {
+          mediaManager.reportEvent({ kind: 'progress', layerId: layer.id, signature, currentTime: media.currentTime });
+        }
       });
     }
-    media.addEventListener(media instanceof HTMLMediaElement ? 'loadeddata' : 'load', () => {
+    const markMediaReady = () => {
       if (media instanceof HTMLVideoElement) {
         media.requestVideoFrameCallback(() => {
           media.dataset.frameReady = 'true';
@@ -139,7 +215,10 @@ function createLayerNode(layer, state) {
         });
       }
       renderLayerChroma(layer.id);
-    });
+    };
+    media.addEventListener(media instanceof HTMLMediaElement ? 'loadeddata' : 'load', markMediaReady);
+    // A preloaded element can be claimed after loadeddata already fired.
+    if (!(media instanceof HTMLMediaElement) || media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) markMediaReady();
     root.append(media);
     if (renderedKind !== 'audio') {
       const canvas = document.createElement('canvas');
@@ -226,6 +305,11 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
           media.dataset.speechActive = 'true';
           media.loop = true;
           void media.play().catch(() => undefined);
+        } else if (layer.kind === 'audio' && !active) {
+          // Scene audio has no ambient-autoplay mode. A track may remain in the
+          // DOM for preload, but only the active prepared/live command owns it.
+          media.pause();
+          media.currentTime = 0;
         } else if (managed && (presentation.mode === 'paused' || presentation.activePaused || !active)) {
           media.pause();
         } else {
@@ -233,8 +317,25 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
             media.dataset.playbackRevision = revision;
             if (!presentation.resumeActiveMedia) media.currentTime = 0;
           }
-          void media.play().catch((error) => report('warn', error instanceof Error ? error.message : error));
+          const resumeAtMs = presentationResumeAtMs(presentation, layer.id);
+          const hasIndependentAudioOffset = layer.id === presentation.activeAudioLayerId && Number.isFinite(presentation.audioResumeAtMs);
+          if (managed && (presentation.resumeActiveMedia || hasIndependentAudioOffset) && resumeAtMs !== null && media.dataset.resumeAtMs !== String(resumeAtMs)) {
+            // Progress events can publish another snapshot while seeking. Keep
+            // playback paused until this exact seek settles, never starting at
+            // the old frame during a segment cut or interrupt resume.
+            if (media.dataset.pendingSeekAtMs !== String(resumeAtMs)) {
+              media.dataset.pendingSeekAtMs = String(resumeAtMs);
+              void mediaManager.seek(media, resumeAtMs).then(() => {
+                media.dataset.resumeAtMs = String(resumeAtMs);
+                delete media.dataset.pendingSeekAtMs;
+                return media.play();
+              }).catch((error) => report('warn', error instanceof Error ? error.message : error));
+            }
+          } else {
+            void media.play().catch((error) => report('warn', error instanceof Error ? error.message : error));
+          }
         }
+        if (active) reportActiveMediaReady(layer.id, media, sourceSignature(layer, state.scene));
       }
     }
   }
@@ -327,6 +428,7 @@ function refreshChroma() {
 function render(state) {
   currentState = state;
   void syncTts(state.tts);
+  preloadPresentationMedia(state);
   syncDisplayedTimelineLayer(state.presentation);
   const ratio = state.scene.width / state.scene.height;
   Object.assign(sceneElement.style, {
@@ -337,17 +439,23 @@ function render(state) {
   const activeIds = new Set(state.scene.layers.filter(isRenderable).map((layer) => layer.id));
   for (const [id, node] of layerNodes) {
     if (!activeIds.has(id)) {
+      const media = node.querySelector('[data-media="source"]');
+      if (media instanceof HTMLMediaElement || media instanceof HTMLImageElement) mediaManager.release(node.dataset.sourceSignature, media);
       node.remove();
       layerNodes.delete(id);
     }
   }
-  const imageLayers = state.scene.layers.filter((layer) => isRenderable(layer) && (layer.kind === 'image' || layer.kind === 'avatar'));
+  const imageLayers = state.scene.layers.filter((layer) => isRenderable(layer) && layer.kind === 'image');
   state.scene.layers.forEach((layer, index) => {
     if (!isRenderable(layer)) return;
     let node = layerNodes.get(layer.id);
     if (!node || node.dataset.sourceSignature !== sourceSignature(layer, state.scene)) {
       const replacement = createLayerNode(layer, state);
-      if (node) node.replaceWith(replacement); else sceneElement.append(replacement);
+      if (node) {
+        const oldMedia = node.querySelector('[data-media="source"]');
+        if (oldMedia instanceof HTMLMediaElement || oldMedia instanceof HTMLImageElement) mediaManager.release(node.dataset.sourceSignature, oldMedia);
+        node.replaceWith(replacement);
+      } else sceneElement.append(replacement);
       node = replacement;
       layerNodes.set(layer.id, node);
     }

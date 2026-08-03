@@ -77,6 +77,12 @@ export interface DesktopApi {
     onPlaybackEnded(listener: (event: SceneRuntimePlaybackEnded) => void): () => void;
     onTtsEvent(listener: (event: import('./scene-runtime').SceneRuntimeTtsEvent) => void): () => void;
   };
+  liveState: {
+    getSnapshot(): Promise<LiveStateSnapshot>;
+    configure(projectId: string, scene: ProjectSceneDocument): Promise<LiveStateConfigurationResult>;
+    play(command: PlayStateCommand): Promise<boolean>;
+    onSnapshot(listener: (snapshot: LiveStateSnapshot) => void): () => void;
+  };
   obs: {
     getConfig(): Promise<ObsConfig>;
     setConfig(input: ObsConfigInput): Promise<ObsConfig>;
@@ -126,3 +132,4 @@ import type { ScenePresentationState, SceneRuntimeEvent, SceneRuntimePlaybackEnd
 import type { ObsConfig, ObsConfigInput, ObsConnectionResult, ObsOutputResult, ObsStatus } from './obs';
 import type { ShopActionResult, ShopBrowserCandidate, ShopConfig, ShopOpenResult, ShopProductMapping, ShopScheduleItem, ShopSnapshot } from './shop';
 import type { DiagnosticLogEntry, DiagnosticLogQuery, DiagnosticsSnapshot, QueueDiagnosticEvent } from './diagnostics';
+import type { LiveStateConfigurationResult, LiveStateSnapshot, PlayStateCommand } from './live-state';

@@ -216,6 +216,29 @@ try {
     throw new Error(`Primary uploaded audio script did not start: ${JSON.stringify(primaryAudioState)}`);
   }
 
+  // An audio source can remain mounted for fast reuse, but publishing a plain
+  // scene must release it immediately rather than leaving ambient audio live.
+  await editorPage.evaluate(async (runtimeScene) => {
+    await globalThis.window.desktopApi.sceneRuntime.publish(runtimeScene, 'idle', {
+      mode: 'scene', activeScriptId: null, activeLayerId: null, pendingLayerId: null,
+      activeAudioLayerId: null, pendingAudioLayerId: null, activeAvatarLayerId: null,
+      activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, managedLayerIds: [],
+      // The Browser Source ignores stale playback revisions, so stopping this
+      // scripted smoke sequence must advance beyond the active revision.
+      playbackRevision: 3, resumeActiveMedia: false, activePaused: true,
+      activeMuted: true, activeVolume: 0, activeLoop: false,
+      activeAudioMuted: true, activeAudioVolume: 0,
+    });
+  }, scene);
+  await runtimePage.waitForTimeout(250);
+  const inactiveAudioState = await runtimePage.evaluate((audioId) => {
+    const audio = globalThis.document.querySelector(`[data-layer-id="${audioId}"] audio`);
+    return audio instanceof HTMLAudioElement ? { paused: audio.paused, currentTime: audio.currentTime } : null;
+  }, uploadedAudioId);
+  if (!inactiveAudioState?.paused || inactiveAudioState.currentTime > 0.05) {
+    throw new Error(`Unowned scene audio continued after playback stopped: ${JSON.stringify(inactiveAudioState)}`);
+  }
+
   const comparisonScene = {
     ...scene,
     layers: scene.layers.filter((layer) => ![gifId, textId, videoAudioId, uploadedAudioId].includes(layer.id)),

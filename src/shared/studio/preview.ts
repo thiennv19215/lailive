@@ -67,6 +67,12 @@ export interface PreviewLayerBox {
   height: number;
 }
 
+// Only image layers participate in the image layout sequence; avatars have a fixed box.
+export function previewImageIndex(layers: readonly ProjectSceneLayer[], target: ProjectSceneLayer): number {
+  if (target.kind !== 'image') return -1;
+  return layers.filter((layer) => layer.kind === 'image').indexOf(target);
+}
+
 export function previewLayerBox(layer: ProjectSceneLayer, imageIndex = 0): PreviewLayerBox {
   if (isDefaultBackgroundLayer(layer)) return { left: 0, top: 0, width: 100, height: 100 };
   // Stickers are overlays, never full-canvas images that obscure existing composition.

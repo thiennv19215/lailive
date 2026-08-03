@@ -72,6 +72,10 @@ describe('SceneRuntimeService', () => {
     const runtimeScript = await fetch(`${status.url}runtime.js`);
     expect(runtimeScript.headers.get('cache-control')).toBe('no-store');
 
+    const mediaManagerScript = await fetch(`${status.url}media-manager.js`);
+    expect(mediaManagerScript.status).toBe(200);
+    expect(mediaManagerScript.headers.get('cache-control')).toBe('no-store');
+
     const gif = await fetch(`${status.url}assets/flower-gif`);
     expect(gif.status).toBe(200);
     expect(gif.headers.get('content-type')).toBe('image/gif');
@@ -201,6 +205,70 @@ describe('SceneRuntimeService', () => {
     expect(response.status).toBe(202);
     expect(received).toEqual([]);
     unsubscribe();
+  });
+
+  it('forwards media events only from a connected browser source at the current revision', async () => {
+    service = createService();
+    const { url } = await service.start();
+    if (!url) throw new Error('Runtime URL was not assigned.');
+    const stream = await fetch(`${url}events?clientId=media-client`);
+    service.publish(createEmptyScene(), 'idle', {
+      mode: 'loading', activeScriptId: 'script-3', activeLayerId: 'video-3', pendingLayerId: null, activeAudioLayerId: null, pendingAudioLayerId: null,
+      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null,
+      managedLayerIds: ['video-3'], playbackRevision: 12, resumeActiveMedia: false, activePaused: true,
+      activeMuted: false, activeVolume: 1, activeLoop: false, activeAudioMuted: true, activeAudioVolume: 0,
+      resumeAtMs: 35_500, preloadLayerId: 'video-4', preloadLayerIds: ['video-5'],
+    });
+    const received: unknown[] = [];
+    const unsubscribe = service.subscribeMediaEvent((event) => received.push(event));
+    const stale = await fetch(`${url}media-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientId: 'media-client', revision: 11, kind: 'ready', signature: 'video-3' }) });
+    expect(stale.status).toBe(202);
+    const unknown = await fetch(`${url}media-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientId: 'other-client', revision: 12, kind: 'ready', signature: 'video-3' }) });
+    expect(unknown.status).toBe(202);
+    const current = await fetch(`${url}media-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientId: 'media-client', revision: 12, kind: 'seeked', signature: 'video-3', resumeAtMs: 35_500 }) });
+    expect(current.status).toBe(200);
+    expect(received).toEqual([expect.objectContaining({ clientId: 'media-client', revision: 12, kind: 'seeked', resumeAtMs: 35_500 })]);
+    unsubscribe();
+    await stream.body?.cancel();
+  });
+
+  it('forwards every accepted media lifecycle event without changing its revision or progress', async () => {
+    service = createService();
+    const { url } = await service.start();
+    if (!url) throw new Error('Runtime URL was not assigned.');
+    const stream = await fetch(`${url}events?clientId=lifecycle-client`);
+    service.publish(createEmptyScene(), 'idle', {
+      mode: 'loading', activeScriptId: 'live-state:WELCOME', activeLayerId: 'welcome-video', activeAudioLayerId: 'welcome-audio', pendingAudioLayerId: null,
+      activeAvatarLayerId: null, activeAvatarTransitionLayerId: null, pendingAvatarLayerId: null, pendingLayerId: null,
+      managedLayerIds: ['welcome-video', 'welcome-audio'], playbackRevision: 21, resumeActiveMedia: false, activePaused: true,
+      activeMuted: false, activeVolume: 1, activeLoop: false, activeAudioMuted: false, activeAudioVolume: 1,
+    });
+    const received: unknown[] = [];
+    const unsubscribe = service.subscribeMediaEvent((event) => received.push(event));
+
+    const lifecycle = [
+      { kind: 'ready', layerId: 'welcome-video', signature: 'welcome-video' },
+      { kind: 'progress', layerId: 'welcome-video', signature: 'welcome-video', currentTime: 3.25 },
+      { kind: 'ended', layerId: 'welcome-audio', signature: 'welcome-audio', currentTime: 8 },
+      { kind: 'error', layerId: 'welcome-audio', signature: 'welcome-audio', currentTime: 3.25, error: 'decode failed' },
+    ];
+    for (const event of lifecycle) {
+      const response = await fetch(`${url}media-event`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ clientId: 'lifecycle-client', revision: 21, ...event }),
+      });
+      expect(response.status).toBe(200);
+    }
+
+    expect(received).toEqual([
+      expect.objectContaining({ revision: 21, kind: 'ready', layerId: 'welcome-video', signature: 'welcome-video' }),
+      expect.objectContaining({ revision: 21, kind: 'progress', layerId: 'welcome-video', currentTime: 3.25 }),
+      expect.objectContaining({ revision: 21, kind: 'ended', layerId: 'welcome-audio', currentTime: 8 }),
+      expect.objectContaining({ revision: 21, kind: 'error', layerId: 'welcome-audio', signature: 'welcome-audio', error: 'decode failed' }),
+    ]);
+    unsubscribe();
+    await stream.body?.cancel();
   });
 
   it('emits internal status transitions without retaining unsubscribed listeners', async () => {

@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import http, { type ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { sceneRuntimeLogSchema, sceneRuntimePlaybackEndedSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema, sceneRuntimeTtsEventSchema } from '../../src/shared/validation/scene-runtime';
-import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimePlaybackEnded, type SceneRuntimeState, type SceneRuntimeStatus, type SceneRuntimeTtsEvent, type SceneTtsPlayback } from '../../src/shared/contracts/scene-runtime';
+import { sceneRuntimeLogSchema, sceneRuntimeMediaEventSchema, sceneRuntimePlaybackEndedSchema, sceneRuntimePublishSchema, sceneRuntimeReadySchema, sceneRuntimeTtsEventSchema } from '../../src/shared/validation/scene-runtime';
+import { createDefaultScenePresentationState, type ScenePresentationState, type SceneRuntimeBrowserLog, type SceneRuntimeEvent, type SceneRuntimeMediaEvent, type SceneRuntimePlaybackEnded, type SceneRuntimeState, type SceneRuntimeStatus, type SceneRuntimeTtsEvent, type SceneTtsPlayback } from '../../src/shared/contracts/scene-runtime';
 import type { ProjectLayerAssetId } from '../../src/shared/contracts/projects';
 import type { AvatarSpeechState } from '../../src/shared/contracts/queue';
 
@@ -76,6 +76,7 @@ export class SceneRuntimeService {
   private readonly listeners = new Set<(status: SceneRuntimeStatus) => void>();
   private readonly playbackEndedListeners = new Set<(event: SceneRuntimePlaybackEnded) => void>();
   private readonly ttsListeners = new Set<(event: SceneRuntimeTtsEvent) => void>();
+  private readonly mediaEventListeners = new Set<(event: SceneRuntimeMediaEvent) => void>();
 
   constructor(private readonly options: SceneRuntimeOptions) {}
 
@@ -136,6 +137,11 @@ export class SceneRuntimeService {
   }
   subscribeTts(listener: (event: SceneRuntimeTtsEvent) => void): () => void { this.ttsListeners.add(listener); return () => this.ttsListeners.delete(listener); }
 
+  subscribeMediaEvent(listener: (event: SceneRuntimeMediaEvent) => void): () => void {
+    this.mediaEventListeners.add(listener);
+    return () => this.mediaEventListeners.delete(listener);
+  }
+
   async close(): Promise<void> {
     for (const client of this.clients.keys()) client.end();
     this.clients.clear();
@@ -148,6 +154,7 @@ export class SceneRuntimeService {
     this.listeners.clear();
     this.playbackEndedListeners.clear();
     this.ttsListeners.clear();
+    this.mediaEventListeners.clear();
   }
 
   private writeEvent(response: ServerResponse, event: SceneRuntimeEvent): void {
@@ -172,6 +179,7 @@ export class SceneRuntimeService {
       const url = new URL(request.url ?? '/', `http://${HOST}`);
       if (request.method === 'GET' && url.pathname === '/') return this.serveFile(response, path.join(this.options.rendererDirectory, 'index.html'), 'no-store');
       if (request.method === 'GET' && url.pathname === '/runtime.js') return this.serveFile(response, path.join(this.options.rendererDirectory, 'runtime.js'), 'no-store');
+      if (request.method === 'GET' && url.pathname === '/media-manager.js') return this.serveFile(response, path.join(this.options.rendererDirectory, 'media-manager.js'), 'no-store');
       if (request.method === 'GET' && url.pathname === '/runtime.css') return this.serveFile(response, path.join(this.options.rendererDirectory, 'runtime.css'), 'no-store');
       if (request.method === 'GET' && url.pathname === '/health') return json(response, 200, this.getStatus());
       if (request.method === 'GET' && url.pathname.startsWith('/assets/')) {
@@ -226,6 +234,15 @@ export class SceneRuntimeService {
         const event = sceneRuntimeTtsEventSchema.parse(await readJson(request));
         if (this.state?.tts?.requestId !== event.requestId) return json(response, 202, { ok: false });
         for (const listener of this.ttsListeners) listener(event);
+        return json(response, 200, { ok: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/media-event') {
+        const event = sceneRuntimeMediaEventSchema.parse(await readJson(request));
+        const isConnectedClient = [...this.clients.values()].some((clientId) => clientId === event.clientId);
+        // Browser Source events are only useful for the current presentation;
+        // reject stale decoder callbacks and unknown loopback clients.
+        if (!isConnectedClient || this.state?.presentation.playbackRevision !== event.revision) return json(response, 202, { ok: false });
+        for (const listener of this.mediaEventListeners) listener(event);
         return json(response, 200, { ok: true });
       }
       json(response, 404, { error: 'Not found.' });

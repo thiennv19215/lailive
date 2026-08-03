@@ -9,7 +9,7 @@ import { liveConnectSchema, liveFixtureEnvelopeSchema, liveProbeSchema } from '.
 import type { SettingsDatabase } from '../services/database';
 import { auxiliaryWindowNameSchema } from '../../src/shared/validation/auxiliary-window';
 import type { AuxiliaryWindowName, AuxiliaryWindowOpenResult } from '../../src/shared/contracts/auxiliary-windows';
-import { projectCreateSchema, projectIdPayloadSchema, projectImportSchema, projectMediaCheckSchema, projectMediaPickSchema, projectMediaReferenceSchema, projectRenameSchema, projectSceneWriteSchema } from '../../src/shared/validation/projects';
+import { projectCreateSchema, projectIdPayloadSchema, projectImportSchema, projectMediaCheckSchema, projectMediaPickSchema, projectMediaReferenceSchema, projectRenameSchema, projectSceneSchema, projectSceneWriteSchema } from '../../src/shared/validation/projects';
 import { convertVideoToGif, inspectMediaReferences, readMediaDataUrl } from '../services/media-files';
 import { GLOBAL_SETTINGS_KEY } from '../../src/shared/contracts/global-settings';
 import type { LiveSessionService } from '../services/live-connector';
@@ -25,6 +25,10 @@ import type { ShopService } from '../services/shop';
 import { shopConfigSchema, shopMappingsSchema, shopPinInputSchema, shopScheduleSchema } from '../../src/shared/validation/shop';
 import type { DiagnosticsService } from '../services/diagnostics';
 import { diagnosticLogQuerySchema, queueDiagnosticEventSchema } from '../../src/shared/validation/diagnostics';
+import { liveRuntimeEventSchema, playStateCommandSchema } from '../../src/shared/validation/live-state';
+import type { LiveStateEngine } from '../services/live-state-engine';
+import type { ProjectSceneDocument } from '../../src/shared/contracts/projects';
+import type { LiveStateConfigurationResult } from '../../src/shared/contracts/live-state';
 
 const closeResponseSchema = z.object({
   action: z.enum(['cancel', 'quit']),
@@ -33,6 +37,7 @@ const closeResponseSchema = z.object({
 
 let removeLiveSubscription: (() => void) | null = null;
 let removeShopSubscription: (() => void) | null = null;
+let removeLiveStateSubscription: (() => void) | null = null;
 
 async function recordLifecycle<T>(
   diagnostics: DiagnosticsService,
@@ -65,10 +70,20 @@ export function registerIpcHandlers(
   obsService: ObsService,
   shopService: ShopService,
   diagnosticsService: DiagnosticsService,
+  liveStateEngine: LiveStateEngine,
+  onLiveStateProjectConfigured?: (projectId: string, scene: ProjectSceneDocument) => LiveStateConfigurationResult,
+  onPreparedLiveProgramPlay?: (command: z.infer<typeof playStateCommandSchema>) => boolean,
   onRendererReady?: () => void,
   onCloseResponse?: (response: z.infer<typeof closeResponseSchema>) => void,
   onOpenAuxiliaryWindow?: (name: AuxiliaryWindowName) => Promise<AuxiliaryWindowOpenResult>,
 ): void {
+  let activeLiveStateScene: ProjectSceneDocument | null = null;
+
+  const stateMediaIsMapped = (assetId: string, kind: 'video' | 'audio'): boolean => activeLiveStateScene?.layers.some((layer) => (
+    (layer.source.assetId === assetId || layer.source.mediaReferenceId === assetId)
+    && (kind === 'audio' ? layer.kind === 'audio' : layer.kind === 'avatar' || layer.kind === 'video')
+  )) ?? false;
+
   ipcMain.handle(IPC_CHANNELS.appGetInfo, () => ({
     version: app.getVersion(),
     platform: process.platform,
@@ -209,6 +224,53 @@ export function registerIpcHandlers(
   sceneRuntimeService.subscribeTts((event) => {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.sceneRuntimeTtsEvent, event);
   });
+  ipcMain.handle(IPC_CHANNELS.liveStateGetSnapshot, () => liveStateEngine.snapshot());
+  ipcMain.handle(IPC_CHANNELS.liveStateConfigure, (_event, payload: unknown) => {
+    const parsed = z.object({ projectId: z.string().trim().min(1).max(120), scene: projectSceneSchema }).parse(payload);
+    if (!database.getProject(parsed.projectId)) throw new Error('LIVE_STATE_PROJECT_NOT_FOUND');
+    activeLiveStateScene = parsed.scene;
+    if (!onLiveStateProjectConfigured) throw new Error('LIVE_STATE_CONFIGURATION_UNAVAILABLE');
+    return onLiveStateProjectConfigured(parsed.projectId, parsed.scene);
+  });
+  ipcMain.handle(IPC_CHANNELS.liveStatePlay, (_event, payload: unknown) => {
+    const command = playStateCommandSchema.parse(payload);
+    const program = activeLiveStateScene?.preparedLiveProgram;
+    if (program?.enabled) {
+      const activeScene = activeLiveStateScene;
+      if (!activeScene) throw new Error('PREPARED_LIVE_PROGRAM_UNAVAILABLE');
+      if (command.state === 'IDLE') {
+        if (!onPreparedLiveProgramPlay) throw new Error('PREPARED_LIVE_PROGRAM_UNAVAILABLE');
+        return onPreparedLiveProgramPlay(command);
+      }
+      if (!program.visualVideoLayerId) throw new Error('PREPARED_LIVE_PROGRAM_VISUAL_UNMAPPED');
+      const cue = program.cues.find((entry) => entry.state === command.state);
+      if (!cue) throw new Error(`PREPARED_LIVE_PROGRAM_CUE_MISSING:${command.state}`);
+      if (!cue.audioLayerId) throw new Error(`PREPARED_LIVE_PROGRAM_CUE_AUDIO_MISSING:${command.state}`);
+      if (!activeScene.layers.some((layer) => layer.id === cue.audioLayerId && layer.kind === 'audio')) throw new Error(`PREPARED_LIVE_PROGRAM_CUE_AUDIO_UNMAPPED:${command.state}`);
+      if (!onPreparedLiveProgramPlay) throw new Error('PREPARED_LIVE_PROGRAM_UNAVAILABLE');
+      return recordLifecycle(diagnosticsService, 'prepared-live-program', `Operator requested ${command.state}.`, () => onPreparedLiveProgramPlay(command), {
+        details: { state: command.state, behavior: cue.behavior }, logSuccess: false,
+      });
+    }
+    if (!activeLiveStateScene?.stateMachineSettings.enabled) throw new Error('LIVE_STATE_MACHINE_DISABLED');
+    const definition = activeLiveStateScene.stateMachineSettings.definitions[command.state];
+    if (command.state !== 'IDLE' && !definition.avatar && !definition.audio) throw new Error(`LIVE_STATE_INCOMPLETE:${command.state}`);
+    if (definition.avatar && !stateMediaIsMapped(definition.avatar.assetId, 'video')) throw new Error(`LIVE_STATE_AVATAR_UNMAPPED:${command.state}`);
+    if (definition.audio && !stateMediaIsMapped(definition.audio.assetId, 'audio')) throw new Error(`LIVE_STATE_AUDIO_UNMAPPED:${command.state}`);
+    return recordLifecycle(diagnosticsService, 'live-state', `Operator requested ${command.state}.`, () => liveStateEngine.play(command), {
+      details: { state: command.state, interrupt: command.interrupt ?? null },
+      logSuccess: false,
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.liveStateRuntimeEvent, (_event, payload: unknown) => {
+    return liveStateEngine.onRuntimeEvent(liveRuntimeEventSchema.parse(payload));
+  });
+  removeLiveStateSubscription?.();
+  removeLiveStateSubscription = liveStateEngine.subscribe((snapshot) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.liveStateSnapshot, snapshot);
+    }
+  });
   ipcMain.handle(IPC_CHANNELS.obsGetConfig, () => obsService.getConfig());
   ipcMain.handle(IPC_CHANNELS.obsSetConfig, (_event, payload: unknown) => obsService.setConfig(obsConfigInputSchema.parse(payload)));
   ipcMain.handle(IPC_CHANNELS.obsTestConnection, (_event, payload: unknown) => recordLifecycle(diagnosticsService, 'obs', 'OBS connection test completed.', () => obsService.testConnection(obsConfigInputSchema.parse(payload))));
@@ -264,5 +326,7 @@ export function removeIpcHandlers(): void {
   removeLiveSubscription = null;
   removeShopSubscription?.();
   removeShopSubscription = null;
+  removeLiveStateSubscription?.();
+  removeLiveStateSubscription = null;
   for (const channel of Object.values(IPC_CHANNELS)) ipcMain.removeHandler(channel);
 }

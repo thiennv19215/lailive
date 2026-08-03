@@ -15,6 +15,11 @@ import { ObsService } from '../services/obs';
 import { ShopService } from '../services/shop';
 import { DiagnosticsService } from '../services/diagnostics';
 import { AppResilienceService, type ResilienceStartupReport } from '../services/resilience';
+import { LiveStateEngine } from '../services/live-state-engine';
+import { PreparedLiveProgramController, type PreparedLiveProgramSnapshot } from '../services/prepared-live-program-controller';
+import { createDefaultScenePresentationState, type SceneRuntimeMediaEvent } from '../../src/shared/contracts/scene-runtime';
+import type { ProjectSceneDocument, ProjectSceneLayer } from '../../src/shared/contracts/projects';
+import { liveStateAudioSeekTime, type LiveRuntimeEvent, type LiveStateMedia, type LiveStateSnapshot } from '../../src/shared/contracts/live-state';
 
 let mainWindow: BrowserWindow | null = null;
 let database: SettingsDatabase | null = null;
@@ -25,6 +30,10 @@ let obsService: ObsService | null = null;
 let shopService: ShopService | null = null;
 let diagnosticsService: DiagnosticsService | null = null;
 let resilienceService: AppResilienceService | null = null;
+let liveStateEngine: LiveStateEngine | null = null;
+let liveStateScene: ProjectSceneDocument | null = null;
+let preparedLiveProgramController: PreparedLiveProgramController | null = null;
+let preparedLiveProgramScene: ProjectSceneDocument | null = null;
 const removeInternalDiagnostics: (() => void)[] = [];
 const liveService = new LiveSessionService();
 let smokeRendererReady = false;
@@ -42,6 +51,113 @@ const sceneRuntimeSmokeMode = process.argv.includes('--scene-runtime-smoke');
 // Isolated capture profiles must run alongside the operator's desktop app.
 // They never share its user data and exist only for automated verification.
 const isolatedCaptureMode = captureMode && Boolean(process.env.AI_LIVESTREAM_SMOKE_DATA_DIR);
+
+function findStateMediaLayer(scene: ProjectSceneDocument, media: LiveStateMedia, expectedKind: 'visual' | 'audio'): ProjectSceneLayer | null {
+  return scene.layers.find((layer) => (
+    (layer.source.assetId === media.assetId || layer.source.mediaReferenceId === media.assetId)
+    && (expectedKind === 'audio' ? layer.kind === 'audio' : layer.kind === 'avatar' || layer.kind === 'video')
+  )) ?? null;
+}
+
+function stateAudioResumeAtMs(snapshot: LiveStateSnapshot): number {
+  return Math.round(liveStateAudioSeekTime(snapshot.definition, snapshot.currentTime) * 1_000);
+}
+
+function publishPreparedLiveProgramSnapshot(snapshot: PreparedLiveProgramSnapshot): void {
+  if (!preparedLiveProgramScene || !sceneRuntimeService) return;
+  const presentation = createDefaultScenePresentationState();
+  presentation.playbackRevision = snapshot.revision;
+  const visual = snapshot.visualVideoLayerId
+    ? preparedLiveProgramScene.layers.find((layer) => layer.id === snapshot.visualVideoLayerId && layer.kind === 'video') ?? null
+    : null;
+  const activeAudioLayerId = snapshot.cueAudioPlaying ? snapshot.cueAudioLayerId
+    : snapshot.baseAudioPlaying ? snapshot.baseAudioLayerId : null;
+  const cueAudioLayers = preparedLiveProgramScene.preparedLiveProgram.cues
+    .map((cue) => cue.audioLayerId)
+    .filter((id): id is string => Boolean(id));
+  const managedLayerIds = [visual?.id, snapshot.baseAudioLayerId, ...cueAudioLayers]
+    .filter((id): id is string => Boolean(id));
+  if (snapshot.enabled && visual) {
+    presentation.mode = snapshot.visualPlaying ? 'playing' : 'stopped';
+    presentation.activeScriptId = 'prepared-live-program';
+    presentation.activeLayerId = visual.id;
+    presentation.activeAudioLayerId = activeAudioLayerId;
+    presentation.managedLayerIds = [...new Set(managedLayerIds)];
+    presentation.activePaused = !snapshot.visualPlaying;
+    // The visual program has no ambient soundtrack. Voice tracks are routed
+    // through the separately-owned base/cue audio layers.
+    presentation.activeMuted = true;
+    presentation.activeVolume = 1;
+    presentation.activeAudioMuted = false;
+    presentation.activeAudioVolume = 1;
+    presentation.activeLoop = false;
+    presentation.resumeActiveMedia = snapshot.visualPlaying;
+    presentation.resumeAtMs = Math.round(snapshot.visualCurrentTime * 1_000);
+    const audioTime = snapshot.cueAudioPlaying ? snapshot.cueAudioCurrentTime : snapshot.baseAudioCurrentTime;
+    presentation.audioResumeAtMs = audioTime === null ? null : Math.round(audioTime * 1_000);
+    presentation.preloadLayerIds = [...new Set([snapshot.baseAudioLayerId, ...cueAudioLayers].filter((id): id is string => Boolean(id)))];
+    presentation.preloadLayerId = presentation.preloadLayerIds[0] ?? null;
+  }
+  try {
+    sceneRuntimeService.publish(preparedLiveProgramScene, activeAudioLayerId ? 'talking' : 'idle', presentation);
+  } catch (error) {
+    diagnosticsService?.recordThrottled('prepared-live-program:scene-publish', 5_000, {
+      level: 'error', source: 'prepared-live-program', message: 'Prepared live program could not publish to Scene Runtime.',
+      details: { code: error instanceof Error ? error.message : String(error) },
+    });
+  }
+}
+
+function publishLiveStateSnapshot(snapshot: LiveStateSnapshot): void {
+  if (!liveStateScene || !sceneRuntimeService) return;
+  const presentation = createDefaultScenePresentationState();
+  presentation.playbackRevision = snapshot.revision;
+  if (snapshot.state !== 'IDLE') {
+    const visual = snapshot.definition.avatar ? findStateMediaLayer(liveStateScene, snapshot.definition.avatar, 'visual') : null;
+    const audio = snapshot.definition.audio ? findStateMediaLayer(liveStateScene, snapshot.definition.audio, 'audio') : null;
+    const nextDefinition = snapshot.definition.nextState ? liveStateScene.stateMachineSettings.definitions[snapshot.definition.nextState] : null;
+    const preloadLayers = [
+      nextDefinition?.avatar ? findStateMediaLayer(liveStateScene, nextDefinition.avatar, 'visual') : null,
+      nextDefinition?.audio ? findStateMediaLayer(liveStateScene, nextDefinition.audio, 'audio') : null,
+    ].filter((layer): layer is ProjectSceneLayer => layer !== null);
+    presentation.mode = snapshot.mode;
+    presentation.activeScriptId = `live-state:${snapshot.state}`;
+    presentation.activeLayerId = visual?.id ?? null;
+    presentation.activeAudioLayerId = audio?.id ?? null;
+    presentation.activeAvatarLayerId = visual?.kind === 'avatar' ? visual.id : null;
+    presentation.managedLayerIds = [...new Set([visual?.id, audio?.id, ...preloadLayers.map((layer) => layer.id)].filter((id): id is string => Boolean(id)))];
+    presentation.activePaused = snapshot.mode !== 'playing';
+    presentation.activeMuted = audio !== null;
+    presentation.activeVolume = 1;
+    presentation.activeLoop = false;
+    presentation.activeAudioMuted = false;
+    presentation.activeAudioVolume = 1;
+    // The engine initializes a fresh segment at definition.startAt and stores
+    // interrupt progress in currentTime. The Browser Source receives its
+    // seek hint in milliseconds and waits for seek completion before play.
+    presentation.resumeActiveMedia = snapshot.currentTime > 0;
+    presentation.resumeAtMs = snapshot.currentTime > 0 ? Math.round(snapshot.currentTime * 1_000) : null;
+    presentation.audioResumeAtMs = audio ? stateAudioResumeAtMs(snapshot) : null;
+    presentation.preloadLayerId = preloadLayers[0]?.id ?? null;
+    presentation.preloadLayerIds = preloadLayers.map((layer) => layer.id);
+  }
+  try {
+    sceneRuntimeService.publish(liveStateScene, snapshot.definition.audio ? 'talking' : 'idle', presentation);
+  } catch (error) {
+    diagnosticsService?.recordThrottled('live-state:scene-publish', 5_000, {
+      level: 'error', source: 'live-state', message: 'State Engine could not publish to Scene Runtime.',
+      details: { code: error instanceof Error ? error.message : String(error) },
+    });
+  }
+}
+
+function toLiveRuntimeEvent(event: SceneRuntimeMediaEvent): LiveRuntimeEvent | null {
+  if (event.kind === 'seeked') return null;
+  if (event.kind === 'error') return { kind: 'error', revision: event.revision, message: event.error ?? 'SCENE_RUNTIME_MEDIA_ERROR', currentTime: event.currentTime ?? undefined };
+  if (event.kind === 'ended') return { kind: 'ended', revision: event.revision, currentTime: event.currentTime ?? undefined };
+  if (event.kind === 'progress') return { kind: 'progress', revision: event.revision, currentTime: event.currentTime ?? 0 };
+  return { kind: 'ready', revision: event.revision };
+}
 
 app.setName('AI Livestream');
 // Studio playback is operator initiated, but media is mounted asynchronously
@@ -179,6 +295,8 @@ app.whenReady().then(async () => {
   ttsService = new TtsProviderService(database);
   obsService = new ObsService(database);
   shopService = new ShopService(database, app.getPath('userData'));
+  liveStateEngine = new LiveStateEngine();
+  preparedLiveProgramController = new PreparedLiveProgramController();
   const appRoot = app.getAppPath();
   sceneRuntimeService = new SceneRuntimeService({
     rendererDirectory: path.join(appRoot, 'scene-runtime'),
@@ -305,6 +423,36 @@ app.whenReady().then(async () => {
   removeInternalDiagnostics.push(sceneRuntimeService.subscribePlaybackEnded((event) => {
     mainWindow?.webContents.send(IPC_CHANNELS.sceneRuntimePlaybackEnded, event);
   }));
+  removeInternalDiagnostics.push(liveStateEngine.subscribe((snapshot) => publishLiveStateSnapshot(snapshot)));
+  removeInternalDiagnostics.push(preparedLiveProgramController.subscribe((snapshot) => publishPreparedLiveProgramSnapshot(snapshot)));
+  removeInternalDiagnostics.push(sceneRuntimeService.subscribeMediaEvent((event) => {
+    const programController = preparedLiveProgramController;
+    const program = programController?.snapshot();
+    if (preparedLiveProgramScene && program && programController) {
+      if (event.revision === program.revision && event.kind === 'progress' && event.layerId === program.visualVideoLayerId && event.currentTime !== null) {
+        programController.onVisualProgress(event.revision, event.currentTime);
+      } else if (event.revision === program.revision && event.kind === 'ended' && event.layerId === program.cueAudioLayerId) {
+        programController.onCueAudioEnded(event.revision);
+      }
+      return;
+    }
+    const liveSnapshot = liveStateEngine?.snapshot();
+    if (liveStateScene && liveSnapshot) {
+      const visual = liveSnapshot.definition.avatar
+        ? findStateMediaLayer(liveStateScene, liveSnapshot.definition.avatar, 'visual')
+        : null;
+      const audio = liveSnapshot.definition.audio
+        ? findStateMediaLayer(liveStateScene, liveSnapshot.definition.audio, 'audio')
+        : null;
+      const clockLayerId = visual?.id ?? audio?.id ?? null;
+      if (event.layerId !== clockLayerId) return;
+    }
+    const runtimeEvent = toLiveRuntimeEvent(event);
+    if (!runtimeEvent || !liveStateScene || !liveStateEngine) return;
+    // Scene Runtime already rejects stale browser callbacks; the engine repeats
+    // the revision check so an old media element cannot advance a new state.
+    liveStateEngine.onRuntimeEvent(runtimeEvent);
+  }));
   allowWindowClose = database.get<boolean>('app.skip-close-confirmation')?.value === true;
 
   if (smokeMode) {
@@ -325,6 +473,34 @@ app.whenReady().then(async () => {
     obsService,
     shopService,
     diagnosticsService,
+    liveStateEngine,
+    (_projectId, scene) => {
+      if (!liveStateEngine || !preparedLiveProgramController) return { enabled: false, message: 'State Engine is unavailable.' };
+      if (scene.preparedLiveProgram.enabled) {
+        liveStateScene = null;
+        liveStateEngine.play({ type: 'PLAY_STATE', state: 'IDLE' });
+        preparedLiveProgramScene = scene;
+        preparedLiveProgramController.configure(scene.preparedLiveProgram);
+        return { enabled: true, message: null };
+      }
+      preparedLiveProgramScene = null;
+      preparedLiveProgramController.stop();
+      if (!scene.stateMachineSettings.enabled) {
+        liveStateScene = null;
+        liveStateEngine.play({ type: 'PLAY_STATE', state: 'IDLE' });
+        return { enabled: false, message: 'State Machine is disabled for this project.' };
+      }
+      liveStateScene = scene;
+      liveStateEngine.configure(scene.stateMachineSettings.definitions);
+      publishLiveStateSnapshot(liveStateEngine.snapshot());
+      return { enabled: true, message: null };
+    },
+    (command) => {
+      const controller = preparedLiveProgramController;
+      if (!controller) return false;
+      if (command.state === 'IDLE') { controller.stop(); return true; }
+      return controller.playCue(command.state);
+    },
     () => {
       log.info('Renderer readiness confirmed');
       if (smokeMode) {
@@ -385,6 +561,11 @@ app.on('before-quit', (event) => {
     obsService = null;
     await shopService?.close();
     shopService = null;
+    liveStateEngine?.dispose();
+    liveStateEngine = null;
+    liveStateScene = null;
+    preparedLiveProgramController = null;
+    preparedLiveProgramScene = null;
     await sceneRuntimeService?.close();
     sceneRuntimeService = null;
     diagnosticsService?.record({ level: 'info', source: 'app', message: 'Application shutdown completed.' });

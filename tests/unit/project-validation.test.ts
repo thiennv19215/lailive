@@ -78,6 +78,8 @@ describe('project validation', () => {
     expect(migrated.mediaReferences).toEqual([]);
     expect(migrated.manualPlaybackSettings).toEqual({ enabled: false, playlist: [] });
     expect(migrated.preparedScriptSettings).toEqual({ enabled: true, scripts: [] });
+    expect(migrated.stateMachineSettings).toMatchObject({ enabled: false });
+    expect(migrated.stateMachineSettings.definitions.WELCOME).toMatchObject({ state: 'WELCOME', duration: 8, nextState: 'IDLE' });
     expect(migrated.canvasPreset).toBe('portrait-1080p');
   });
 
@@ -206,5 +208,106 @@ describe('project validation', () => {
       productPinEnabled: true,
     });
     expect(legacy.livestreamSettings.triggers.find((trigger) => trigger.event === 'share')).toMatchObject({ enabled: false, actionType: 'voice_tts' });
+  });
+
+  it('persists valid state machine definitions while safely disabling malformed legacy settings', () => {
+    const scene = createEmptyScene();
+    const configured = projectRecordSchema.parse({
+      id: 'state-machine-project',
+      title: 'State machine project',
+      posterPreset: 'product',
+      scene: {
+        ...scene,
+        stateMachineSettings: {
+          enabled: true,
+          definitions: {
+            ...scene.stateMachineSettings.definitions,
+            DEMO: {
+              ...scene.stateMachineSettings.definitions.DEMO,
+              avatar: { assetId: 'demo-avatar', kind: 'video' },
+              audio: { assetId: 'demo-audio', kind: 'audio' },
+              timeline: [{ checkpoint: 'intro', startTime: 0, endTime: 10, transition: 'fade' }],
+            },
+          },
+        },
+      },
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastOpenedAt: null,
+    });
+    expect(configured.scene.stateMachineSettings.enabled).toBe(true);
+    expect(configured.scene.stateMachineSettings.definitions.DEMO.timeline).toHaveLength(1);
+
+    const migrated = migrateProjectScene({
+      ...scene,
+      schemaVersion: 19,
+      stateMachineSettings: { enabled: true, definitions: { DEMO: { duration: -1 } } },
+    });
+    expect(migrated.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+    expect(migrated.stateMachineSettings).toMatchObject({ enabled: false });
+    expect(migrated.preparedScriptSettings).toEqual(scene.preparedScriptSettings);
+    expect(migrated.manualPlaybackSettings).toEqual(scene.manualPlaybackSettings);
+  });
+
+  it('stores bounded master-video timeline metadata and upgrades v20 projects safely', () => {
+    const scene = createEmptyScene();
+    const masterVideo = { id: 'long-demo', label: 'Long demo', kind: 'video' as const, path: 'C:\\media\\long-demo.mp4' };
+    const configured = projectRecordSchema.parse({
+      id: 'master-video-project',
+      title: 'Master video project',
+      posterPreset: 'product',
+      scene: {
+        ...scene,
+        mediaReferences: [masterVideo],
+        stateMachineSettings: {
+          ...scene.stateMachineSettings,
+          masterVideoAssetId: masterVideo.id,
+          durationSeconds: 3_600.5,
+        },
+      },
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastOpenedAt: null,
+    });
+    expect(configured.scene.stateMachineSettings).toMatchObject({ masterVideoAssetId: 'long-demo', durationSeconds: 3_600.5 });
+    expect(projectRecordSchema.safeParse({
+      ...configured,
+      scene: { ...configured.scene, stateMachineSettings: { ...configured.scene.stateMachineSettings, durationSeconds: 86_401 } },
+    }).success).toBe(false);
+    expect(projectRecordSchema.safeParse({
+      ...configured,
+      scene: { ...configured.scene, stateMachineSettings: { ...configured.scene.stateMachineSettings, masterVideoAssetId: 'missing-video' } },
+    }).success).toBe(false);
+
+    const upgraded = migrateProjectScene({
+      ...scene,
+      schemaVersion: 20,
+      stateMachineSettings: { enabled: true, definitions: scene.stateMachineSettings.definitions },
+    });
+    expect(upgraded.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+    expect(upgraded.stateMachineSettings).toMatchObject({
+      enabled: true,
+      masterVideoAssetId: null,
+      durationSeconds: 0,
+    });
+  });
+
+  it('persists the optional single-visual program without replacing legacy state-machine settings', () => {
+    const scene = createEmptyScene();
+    const visual = { ...scene.layers[0]!, id: 'program-video', name: 'Program visual', kind: 'video' as const };
+    const baseAudio = { ...scene.layers[0]!, id: 'program-audio', name: 'Program voice', kind: 'audio' as const };
+    const welcomeAudio = { ...scene.layers[0]!, id: 'welcome-audio', name: 'Welcome voice', kind: 'audio' as const };
+    const configured = migrateProjectScene({
+      ...scene,
+      layers: [visual, baseAudio, welcomeAudio],
+      preparedLiveProgram: {
+        enabled: true,
+        visualVideoLayerId: visual.id,
+        baseAudioLayerId: baseAudio.id,
+        cues: [{ state: 'WELCOME', visualStartAt: 5, visualEndAt: 12, audioLayerId: welcomeAudio.id, behavior: 'interrupt-resume' }],
+      },
+    });
+    expect(configured.preparedLiveProgram).toMatchObject({ enabled: true, visualVideoLayerId: 'program-video', baseAudioLayerId: 'program-audio' });
+    expect(configured.preparedLiveProgram.cues[0]).toMatchObject({ state: 'WELCOME', audioLayerId: 'welcome-audio' });
+    expect(configured.stateMachineSettings).toEqual(scene.stateMachineSettings);
+
+    const v21 = migrateProjectScene({ ...scene, schemaVersion: 21 });
+    expect(v21.preparedLiveProgram).toEqual({ enabled: false, visualVideoLayerId: null, baseAudioLayerId: null, cues: [] });
   });
 });

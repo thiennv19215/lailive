@@ -3,6 +3,7 @@ import { PROJECT_EXPORT_FORMAT, PROJECT_SCHEMA_VERSION, createEmptyScene, type P
 import { productCatalogSchema } from './products';
 import { aiReplySettingsSchema } from './ai';
 import { ttsProjectSettingsSchema } from './tts';
+import { liveStateDefinitionsSchema } from './live-state';
 
 export const projectIdSchema = z.string().trim().min(1).max(120).regex(/^[a-z0-9][a-z0-9_-]*$/i);
 export const projectTitleSchema = z.string().trim().min(1).max(80);
@@ -161,6 +162,30 @@ export const projectPreparedScriptSettingsSchema = z.object({
     if (new Set(scripts.map((script) => script.order)).size !== scripts.length) context.addIssue({ code: 'custom', message: 'Script orders must be unique.' });
   }),
 });
+export const projectStateMachineSettingsSchema = z.object({
+  enabled: z.boolean(),
+  definitions: liveStateDefinitionsSchema,
+  // v21: a long-form source video can be segmented into state ranges.
+  // Zero keeps the unknown-duration default safe for older projects.
+  masterVideoAssetId: projectIdSchema.nullable().default(null),
+  durationSeconds: z.number().finite().min(0).max(86_400).default(0),
+});
+export const preparedLiveProgramCueSchema = z.object({
+  state: z.enum(['WELCOME', 'CONSULT', 'DEMO', 'CTA', 'THANKS']),
+  visualStartAt: z.number().finite().min(0).max(86_400),
+  visualEndAt: z.number().finite().positive().max(86_400),
+  audioLayerId: projectIdSchema.nullable().default(null),
+  behavior: z.enum(['interrupt-resume', 'jump']),
+}).refine((cue) => cue.visualEndAt > cue.visualStartAt, 'Cue end must follow its visual start.');
+export const preparedLiveProgramSettingsSchema = z.object({
+  enabled: z.boolean(),
+  visualVideoLayerId: projectIdSchema.nullable().default(null),
+  baseAudioLayerId: projectIdSchema.nullable().default(null),
+  cues: z.array(preparedLiveProgramCueSchema).max(5).refine(
+    (cues) => new Set(cues.map((cue) => cue.state)).size === cues.length,
+    'Each program cue state must be unique.',
+  ),
+});
 export const projectSceneSchema = z.object({
   schemaVersion: z.literal(PROJECT_SCHEMA_VERSION),
   canvasPreset: z.enum(['portrait-1080p', 'landscape-1080p']),
@@ -173,6 +198,8 @@ export const projectSceneSchema = z.object({
   livestreamSettings: projectLivestreamSettingsSchema,
   manualPlaybackSettings: projectManualPlaybackSettingsSchema,
   preparedScriptSettings: projectPreparedScriptSettingsSchema,
+  stateMachineSettings: projectStateMachineSettingsSchema,
+  preparedLiveProgram: preparedLiveProgramSettingsSchema,
   aiSettings: aiReplySettingsSchema,
   ttsSettings: ttsProjectSettingsSchema,
   products: productCatalogSchema,
@@ -186,6 +213,26 @@ export const projectSceneSchema = z.object({
     : scene.width === 1920 && scene.height === 1080,
   'Canvas dimensions must match the selected preset.',
 ).superRefine((scene, context) => {
+  const masterVideoAssetId = scene.stateMachineSettings.masterVideoAssetId;
+  if (masterVideoAssetId && !scene.mediaReferences.some((reference) => reference.id === masterVideoAssetId && reference.kind === 'video')) {
+    context.addIssue({
+      code: 'custom',
+      path: ['stateMachineSettings', 'masterVideoAssetId'],
+      message: 'Master video must reference a video media asset in this project.',
+    });
+  }
+  const program = scene.preparedLiveProgram;
+  if (program.visualVideoLayerId && !scene.layers.some((layer) => layer.id === program.visualVideoLayerId && layer.kind === 'video')) {
+    context.addIssue({ code: 'custom', path: ['preparedLiveProgram', 'visualVideoLayerId'], message: 'Program visual must reference a video layer.' });
+  }
+  if (program.baseAudioLayerId && !scene.layers.some((layer) => layer.id === program.baseAudioLayerId && layer.kind === 'audio')) {
+    context.addIssue({ code: 'custom', path: ['preparedLiveProgram', 'baseAudioLayerId'], message: 'Program base audio must reference an audio layer.' });
+  }
+  program.cues.forEach((cue, index) => {
+    if (cue.audioLayerId && !scene.layers.some((layer) => layer.id === cue.audioLayerId && layer.kind === 'audio')) {
+      context.addIssue({ code: 'custom', path: ['preparedLiveProgram', 'cues', index, 'audioLayerId'], message: 'Cue audio must reference an audio layer.' });
+    }
+  });
   scene.preparedScriptSettings.scripts.forEach((script, index) => {
     if (script.avatarLayerId && !scene.layers.some((layer) => layer.id === script.avatarLayerId && layer.kind === 'avatar')) {
       context.addIssue({ code: 'custom', path: ['preparedScriptSettings', 'scripts', index, 'avatarLayerId'], message: 'Script avatar must reference an avatar layer.' });
@@ -335,13 +382,21 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
       visible: candidate.visible ?? true, locked: candidate.locked ?? false, opacity: candidate.opacity ?? 1, fitMode: candidate.fitMode ?? 'contain',
       loop: candidate.loop ?? (kind === 'gif' || kind === 'video' || kind === 'audio'),
       // Version 19 enables embedded audio for video sources, including MP4 avatars.
-      muted: (kind === 'video' || isVideoAvatar) && sourceSchemaVersion < PROJECT_SCHEMA_VERSION ? false : candidate.muted ?? false,
+      muted: (kind === 'video' || isVideoAvatar) && sourceSchemaVersion < 19 ? false : candidate.muted ?? false,
       volume: candidate.volume ?? 1,
       avatarState: candidate.avatarState ?? (kind === 'avatar' ? 'idle' : 'none'), avatarMotion: candidate.avatarMotion ?? null, chromaKey: candidate.chromaKey ?? { enabled: false, color: '#00ff00', tolerance: 24 },
       source: candidate.source ?? { type: 'none', assetId: null, mediaReferenceId: null },
     });
   });
   const manualPlaybackSettings = migrateManualPlaybackSettings(source.manualPlaybackSettings, defaults.manualPlaybackSettings);
+  const parsedStateMachineSettings = projectStateMachineSettingsSchema.safeParse(source.stateMachineSettings);
+  const stateMachineSettings: ProjectSceneDocument['stateMachineSettings'] = parsedStateMachineSettings.success
+    ? parsedStateMachineSettings.data
+    : defaults.stateMachineSettings;
+  const parsedPreparedLiveProgram = preparedLiveProgramSettingsSchema.safeParse(source.preparedLiveProgram);
+  const preparedLiveProgram: ProjectSceneDocument['preparedLiveProgram'] = parsedPreparedLiveProgram.success
+    ? parsedPreparedLiveProgram.data
+    : defaults.preparedLiveProgram;
   return projectSceneSchema.parse({
     ...defaults,
     ...source,
@@ -358,6 +413,8 @@ export function migrateProjectScene(scene: unknown): ProjectSceneDocument {
     }),
     manualPlaybackSettings,
     preparedScriptSettings: migratePreparedScriptSettings(source.preparedScriptSettings, manualPlaybackSettings, migratedLayers, defaults.preparedScriptSettings),
+    stateMachineSettings,
+    preparedLiveProgram,
 
     aiSettings: aiReplySettingsSchema.catch(defaults.aiSettings).parse(source.aiSettings),
     ttsSettings: ttsProjectSettingsSchema.catch(defaults.ttsSettings).parse(source.ttsSettings),

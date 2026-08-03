@@ -116,6 +116,13 @@ function syncMediaPlayback(): void {
     reportMotionReady();
     return;
   }
+  if (props.mediaKind === 'audio' && !props.playbackActive) {
+    // Audio sources stay preloaded in the Studio, but are silent until a
+    // prepared script explicitly selects them.
+    media.pause();
+    media.currentTime = 0;
+    return;
+  }
   if (!props.playbackManaged) {
     media.loop = props.layer.loop;
     void media.play().catch(() => undefined);
@@ -256,7 +263,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="rootElement" class="scene-runtime-layer scene-runtime-media" :class="{ 'is-selected': selected, 'is-audio-source': mediaKind === 'audio' }" :data-runtime-layer-id="layer.id" :data-media-kind="mediaKind" :data-avatar-state="layer.kind === 'avatar' ? layer.avatarState : undefined" :style="renderStyle">
     <video v-if="mediaKind === 'video'" ref="videoElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :style="{ objectFit: layer.fitMode }" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" playsinline preload="auto" @loadeddata="handleMediaReady" @playing="handleMediaPlaying" @error="handleMediaError" @ended="handleVideoEnded" />
-    <audio v-else-if="mediaKind === 'audio'" ref="audioElement" :src="sourceUrl" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="(!playbackManaged || playbackActive) && (!speechManaged || speechActive)" preload="auto" @loadeddata="handleMediaReady" @playing="handleMediaPlaying" @error="handleMediaError" @ended="handleVideoEnded" />
+    <audio v-else-if="mediaKind === 'audio'" ref="audioElement" :src="sourceUrl" :loop="playbackManaged ? false : layer.loop" :muted="layer.muted" :autoplay="false" preload="auto" @loadeddata="handleMediaReady" @playing="handleMediaPlaying" @error="handleMediaError" @ended="handleVideoEnded" />
     <img v-else ref="imageElement" class="scene-runtime-media-source" :class="{ 'is-chroma-source': chromaEnabled }" :src="sourceUrl" :alt="layer.name" :style="{ objectFit: layer.fitMode }" @load="refreshChromaRenderer" />
     <canvas v-if="mediaKind !== 'audio'" ref="canvasElement" class="scene-chroma-canvas" :class="{ active: chromaEnabled }" aria-hidden="true" />
   </div>

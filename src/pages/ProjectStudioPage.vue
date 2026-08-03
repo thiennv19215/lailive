@@ -40,17 +40,19 @@ import {
   type LayerTransform,
   type ResizeHandle,
 } from '../shared/studio/layer-transform';
-import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, previewLayerBox, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
+import { fitContainedPreviewBox, isDefaultBackgroundLayer, isPreviewRenderable, previewImageIndex, previewLayerBox, previewLayerStyle, resolvePreviewSource } from '../shared/studio/preview';
 import { ensureUniqueLayerIds } from '../shared/studio/layer-identity';
 import { synchronizeAvatarMotionTransforms } from '../shared/studio/avatar-motion-group';
 import { PROJECT_SCHEMA_VERSION, createEmptyScene, createProjectSceneLayer, type AvatarVideoState, type ProjectMediaReference, type ProjectMediaStatus, type PreparedScriptRole, type ProjectPreparedScript, type ProjectSceneDocument, type ProjectSceneLayer, type ProjectTriggerEvent } from '../shared/contracts/projects';
 import type { ObsConfigInput, ObsStatus } from '../shared/contracts/obs';
 import type { AvatarSpeechState } from '../shared/contracts/queue';
+import { DEFAULT_LIVE_STATE_DEFINITIONS, type LiveState, type LiveStateSnapshot } from '../shared/contracts/live-state';
 import SceneMediaLayer from '../components/SceneMediaLayer.vue';
 import StudioInspectorSidebar from '../components/studio/StudioInspectorSidebar.vue';
 import StudioMixerFooter from '../components/studio/StudioMixerFooter.vue';
 import StudioPlaylistPanel from '../components/studio/StudioPlaylistPanel.vue';
 import StudioSourcePanel from '../components/studio/StudioSourcePanel.vue';
+import StateMachineConfigPanel from '../components/studio/StateMachineConfigPanel.vue';
 import { useStudioPlayback } from '../composables/useStudioPlayback';
 import { AvatarVideoStateManager, type AvatarVideoSnapshot } from '../modules/playback/avatar-video-state-manager';
 
@@ -88,6 +90,13 @@ const savingProject = ref(false);
 const avatarLibraryOpen = ref(false);
 const avatarAddOpen = ref(false);
 const preparedScriptsOpen = ref(false);
+const stateMachineOpen = ref(false);
+const playbackMonitorOpen = ref(true);
+const liveStateSnapshot = ref<LiveStateSnapshot>({
+  mode: 'idle', state: 'IDLE', revision: 0, currentTime: 0, ready: false,
+  definition: DEFAULT_LIVE_STATE_DEFINITIONS.IDLE, resumeStack: [], errorMessage: null,
+});
+let unsubscribeLiveState: (() => void) | null = null;
 const scriptDialogOpen = ref(false);
 const avatarScriptsDraft = ref<string[] | null>(null);
 const scenePosterElement = ref<HTMLElement | null>(null);
@@ -227,6 +236,41 @@ const unsubscribeAvatarVideo = avatarVideoManager.subscribe((snapshot) => {
   avatarVideoSnapshot.value = snapshot;
   void publishPlayback();
 });
+
+async function playOperatorState(state: Exclude<LiveState, 'IDLE'>): Promise<void> {
+  try {
+    const configuration = await globalThis.window.desktopApi.liveState.configure(
+      String(route.params.projectId),
+      buildSceneDocument(),
+    );
+    if (!configuration.enabled) {
+      notice.value = configuration.message ?? 'State Machine chưa được bật cho dự án này.';
+      return;
+    }
+    const accepted = await globalThis.window.desktopApi.liveState.play({ type: 'PLAY_STATE', state });
+    if (!accepted) notice.value = `Trạng thái ${state} không đủ ưu tiên để chèn vào cảnh đang phát.`;
+  } catch (error) {
+    notice.value = `Không thể chạy trạng thái ${state}: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function refreshLiveStateMachine(showError = false): Promise<void> {
+  if (!projectLoaded.value) return;
+  try {
+    const configuration = await globalThis.window.desktopApi.liveState.configure(
+      String(route.params.projectId),
+      buildSceneDocument(),
+    );
+    if (showError && !configuration.enabled) notice.value = configuration.message ?? 'State Machine chưa được bật cho dự án này.';
+  } catch (error) {
+    if (showError) notice.value = `Không thể cấu hình State Machine: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+function stateMachineChanged(): void {
+  void refreshLiveStateMachine(true);
+}
+
 const resizeHandles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const pinManagerStatus = computed(() => {
   if (pinManagerState.value === 'checking') return 'Đang mở TikTok Live Manager';
@@ -254,7 +298,21 @@ const loadedPreviewMediaIds = computed(() => new Set([
 const previewRenderableLayers = computed(() => layers.value.filter((layer) => (
   layer.kind !== 'audio' && isPreviewRenderable(layer, loadedPreviewMediaIds.value)
 )));
-const previewImageLayers = computed(() => previewRenderableLayers.value.filter((layer) => layer.kind === 'image' || layer.kind === 'avatar'));
+const hasUsableStateMedia = computed(() => Object.values(persistedScene.value.stateMachineSettings.definitions).some((definition) => {
+  const isMapped = (assetId: string, kind: 'visual' | 'audio'): boolean => layers.value.some((layer) => {
+    const matchesAsset = layer.source.assetId === assetId || layer.source.mediaReferenceId === assetId;
+    const matchesKind = kind === 'audio' ? layer.kind === 'audio' : layer.kind === 'video' || layer.kind === 'avatar';
+    const missing = layer.source.mediaReferenceId !== null && mediaStatuses.value.some((media) => media.id === layer.source.mediaReferenceId && !media.exists);
+    return matchesAsset && matchesKind && !missing;
+  });
+  return (definition.avatar !== null && isMapped(definition.avatar.assetId, 'visual'))
+    || (definition.audio !== null && isMapped(definition.audio.assetId, 'audio'));
+}));
+const stateMachineReady = computed(() => persistedScene.value.stateMachineSettings.enabled && hasUsableStateMedia.value);
+const stateMachineSetupHint = computed(() => {
+  if (!persistedScene.value.stateMachineSettings.enabled) return 'Bật State Machine và gán media cho ít nhất một state.';
+  return 'Gán video/avatar hoặc audio hợp lệ cho ít nhất một state để điều khiển.';
+});
 
 const activeTransform = computed(() => activeLayer.value?.transform ?? DEFAULT_LAYER_TRANSFORM);
 const activeSelectionBox = computed(() => {
@@ -262,7 +320,7 @@ const activeSelectionBox = computed(() => {
   if (!layer) return { left: 0, top: 0, width: 100, height: 100 };
   if (layer.kind === 'text') return previewLayerBox(layer);
 
-  const box = previewLayerBox(layer, previewImageLayers.value.indexOf(layer));
+  const box = previewLayerBox(layer, previewImageIndex(previewRenderableLayers.value, layer));
   const sourceAspectRatio = previewMediaAspectRatios.value[layer.id];
   if (layer.fitMode !== 'contain' || !sourceAspectRatio) return box;
   return fitContainedPreviewBox(box, sourceAspectRatio, persistedScene.value.width / persistedScene.value.height);
@@ -292,6 +350,24 @@ const sceneTextStyle = computed(() => ({
   textAlign: textStyle.align,
 }));
 
+const monitorDefinition = computed(() => liveStateSnapshot.value.definition);
+const monitorConfiguredDefinition = computed(() => persistedScene.value.stateMachineSettings.definitions[liveStateSnapshot.value.state]);
+const monitorAudioOffset = computed(() => monitorConfiguredDefinition.value.audioStartAt);
+const monitorRuntimeStatus = computed(() => {
+  const snapshot = liveStateSnapshot.value;
+  if (snapshot.mode === 'error') return `Lỗi: ${snapshot.errorMessage ?? 'Runtime không trả chi tiết'}`;
+  if (snapshot.mode === 'playing') return snapshot.ready ? 'Đang phát' : 'Đang chờ runtime';
+  if (snapshot.mode === 'loading') return 'Đang preload';
+  return 'Sẵn sàng / idle';
+});
+
+function formatMonitorTime(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return 'Đến hết video';
+  const safe = Math.max(0, seconds);
+  const minutes = Math.floor(safe / 60);
+  return `${String(minutes).padStart(2, '0')}:${(safe % 60).toFixed(1).padStart(4, '0')}`;
+}
+
 
 onBeforeUnmount(() => {
   if (pinManagerTimer !== null) globalThis.clearTimeout(pinManagerTimer);
@@ -299,9 +375,16 @@ onBeforeUnmount(() => {
   stopLayerTransform();
   avatarVideoManager.dispose();
   unsubscribeAvatarVideo();
+  unsubscribeLiveState?.();
+  unsubscribeLiveState = null;
 });
 
 onMounted(async () => {
+  unsubscribeLiveState = globalThis.window.desktopApi.liveState.onSnapshot((snapshot) => {
+    liveStateSnapshot.value = snapshot;
+  });
+  const currentLiveState = await globalThis.window.desktopApi.liveState.getSnapshot().catch(() => null);
+  if (currentLiveState) liveStateSnapshot.value = currentLiveState;
   const projectId = String(route.params.projectId ?? '');
   const project = await globalThis.window.desktopApi.projects.get(projectId).catch(() => null);
   let repairedDuplicateLayerIds = false;
@@ -349,6 +432,7 @@ onMounted(async () => {
     await loadMediaSources();
     syncPlaybackController();
     startWaitingTimelineIfReady();
+    await refreshLiveStateMachine();
     await publishPlayback();
     await refreshSceneRuntimeUrl();
   }
@@ -396,6 +480,8 @@ watch([
   triggers,
     mediaReferences,
   () => persistedScene.value.preparedScriptSettings,
+  () => persistedScene.value.stateMachineSettings,
+  () => persistedScene.value.preparedLiveProgram,
 ], () => {
   if (!projectLoaded.value || hydratingProject.value) return;
   void publishPlayback();
@@ -656,7 +742,7 @@ function avatarMotionReady(layerId: string): void { avatarVideoManager.ready(lay
 function avatarMotionEnded(layerId: string): void { avatarVideoManager.ended(layerId); }
 
 function previewLayerHitStyle(layer: StudioLayer, index: number): Record<string, string | number> {
-  const imageIndex = previewImageLayers.value.indexOf(layer);
+  const imageIndex = previewImageIndex(previewRenderableLayers.value, layer);
   const style = { ...previewLayerStyle(layer, index, imageIndex) };
   // Prepared scripts own visibility and only advance when the active media ends.
   const isManagedMedia = preparedScripts().some((script) => script.mediaLayerId === layer.id || script.audioLayerId === layer.id);
@@ -850,6 +936,7 @@ async function saveSceneNow(): Promise<void> {
   try {
     const scene = JSON.parse(JSON.stringify(buildSceneDocument())) as ProjectSceneDocument;
     await globalThis.window.desktopApi.projects.saveScene(String(route.params.projectId), scene);
+    await refreshLiveStateMachine();
     autosaveStatus.value = 'saved';
   } catch (error) {
     autosaveStatus.value = 'error';
@@ -1339,6 +1426,23 @@ function selectVoice(option: string): void {
         </div>
       </div>
       <div class="studio-status">1080 × 1920 · 9:16 <span>{{ autosaveStatus === 'saving' ? 'Đang lưu...' : autosaveStatus === 'error' ? 'Lưu thất bại' : autosaveStatus === 'saved' ? 'Đã lưu local' : 'Chưa có thay đổi' }}</span></div>
+      <section v-if="stateMachineReady" class="playback-monitor" :class="{ collapsed: !playbackMonitorOpen, error: liveStateSnapshot.mode === 'error' }" aria-label="Playback Monitor">
+        <header>
+          <span><b>Playback Monitor</b><small>Runtime OBS</small></span>
+          <button type="button" :aria-expanded="playbackMonitorOpen" @click="playbackMonitorOpen = !playbackMonitorOpen">{{ playbackMonitorOpen ? 'Thu gọn' : 'Mở' }}</button>
+        </header>
+        <template v-if="playbackMonitorOpen">
+          <div class="monitor-state"><strong>{{ liveStateSnapshot.state }}</strong><span :class="`monitor-mode-${liveStateSnapshot.mode}`">{{ monitorRuntimeStatus }}</span></div>
+          <dl>
+            <div><dt>Video hiện tại</dt><dd>{{ formatMonitorTime(liveStateSnapshot.currentTime) }}</dd></div>
+            <div><dt>Phạm vi DEMO/cấu hình</dt><dd>{{ formatMonitorTime(monitorDefinition.startAt) }} → {{ formatMonitorTime(monitorDefinition.endAt) }}</dd></div>
+            <div><dt>Audio</dt><dd>{{ monitorAudioOffset === null ? 'Đồng bộ với video' : `Bắt đầu tại ${formatMonitorTime(monitorAudioOffset)}` }}</dd></div>
+            <div><dt>Revision</dt><dd>#{{ liveStateSnapshot.revision }} · {{ liveStateSnapshot.ready ? 'ready' : 'chờ ready' }}</dd></div>
+          </dl>
+          <p v-if="liveStateSnapshot.resumeStack.length" class="monitor-resume">Resume chờ: {{ liveStateSnapshot.resumeStack[liveStateSnapshot.resumeStack.length - 1]?.state }} tại {{ formatMonitorTime(liveStateSnapshot.resumeStack[liveStateSnapshot.resumeStack.length - 1]?.currentTime) }}</p>
+          <p v-else class="monitor-hint">Kiểm tra: DEMO 00:30 → 00:45, bấm Chào khách tại 00:35.5, rồi xác nhận Runtime resume đúng mốc.</p>
+        </template>
+      </section>
     </main>
 
     <StudioInspectorSidebar
@@ -1370,7 +1474,8 @@ function selectVoice(option: string): void {
       @open-settings="dialog = 'livestream'"
     />
 
-    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" :layers="layers" :active-layer-index="activeLayerIndex" @open-prepared-scripts="preparedScriptsOpen = true" @start-sequence="playbackStart" @play-script="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @select-layer="activeLayerIndex = $event" @set-layer-audio="setLayerAudio" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
+    <StudioMixerFooter :obs-status="obsStatus" :obs-busy="obsBusy" :scripts="preparedScripts()" :snapshot="playlistSnapshot" :layers="layers" :active-layer-index="activeLayerIndex" :state-machine-ready="stateMachineReady" :state-machine-hint="stateMachineSetupHint" @open-prepared-scripts="preparedScriptsOpen = true" @open-state-machine="stateMachineOpen = true" @start-sequence="playbackStart" @play-script="playbackPlayScript" @pause="playbackPause" @resume="playbackResume" @skip="playbackSkip" @stop="playbackStop" @play-role="playbackPlayRole" @play-state="playOperatorState" @select-layer="activeLayerIndex = $event" @set-layer-audio="setLayerAudio" @export="dialog = 'export'" @start="dialog = 'start'" @settings="dialog = 'livestream'" @connect-obs="connectObsOutput" @toggle-camera="toggleObsCamera" />
+    <StateMachineConfigPanel v-if="stateMachineOpen" v-model="persistedScene.stateMachineSettings" v-model:prepared-live-program="persistedScene.preparedLiveProgram" :layers="layers" :media-missing-ids="mediaStatuses.filter((reference) => !reference.exists).map((reference) => reference.id)" @changed="stateMachineChanged" @close="stateMachineOpen = false" />
 
     <div v-if="avatarLibraryOpen" class="studio-dialog-backdrop" @click.self="avatarLibraryOpen = false">
       <section class="studio-dialog avatar-library-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-library-title">
@@ -1453,3 +1558,9 @@ function selectVoice(option: string): void {
     <div v-if="savingProject" class="project-saving-overlay" role="status" aria-live="polite"><span /><strong>Đang lưu dự án</strong><p>Vui lòng đợi...</p></div>
   </div>
 </template>
+
+<style scoped>
+.playback-monitor { position: absolute; z-index: 20; right: 16px; bottom: 42px; width: min(360px, calc(100% - 32px)); overflow: hidden; border: 1px solid #48414a; border-radius: 9px; background: rgb(19 19 23 / 96%); box-shadow: 0 10px 28px rgb(0 0 0 / 40%); color: #e8e8ed; font-size: 10px; }
+.playback-monitor.error { border-color: #a74b4b; }.playback-monitor.collapsed { width: auto; }.playback-monitor header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-bottom: 1px solid #34343b; }.playback-monitor.collapsed header { border-bottom: 0; }.playback-monitor header span { display: grid; gap: 1px; }.playback-monitor header b { color: #f2c49d; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }.playback-monitor header small { color: #92929d; font-size: 9px; }.playback-monitor button { border: 1px solid #514139; border-radius: 4px; padding: 3px 6px; background: #251c18; color: #efc29f; font-size: 9px; cursor: pointer; }.monitor-state { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 5px; }.monitor-state strong { color: #ffd2ad; font-size: 15px; letter-spacing: .06em; }.monitor-state span { color: #b8b8c1; }.monitor-mode-playing { color: #8fd3a8 !important; }.monitor-mode-error { color: #f28c8c !important; }.playback-monitor dl { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0; padding: 5px 10px 9px; }.playback-monitor dl div { min-width: 0; padding: 5px; border-radius: 4px; background: #101014; }.playback-monitor dt { color: #81818c; }.playback-monitor dd { overflow: hidden; margin: 2px 0 0; color: #e5e5eb; font-size: 10px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }.monitor-resume, .monitor-hint { margin: 0; padding: 7px 10px 9px; border-top: 1px solid #303038; color: #c8a37f; font-size: 9px; line-height: 1.4; }.monitor-hint { color: #9a9aa5; }
+@media (max-width: 760px) { .playback-monitor { right: 8px; bottom: 38px; width: min(360px, calc(100% - 16px)); } }
+</style>
