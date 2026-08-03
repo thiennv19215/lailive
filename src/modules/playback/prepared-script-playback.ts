@@ -148,7 +148,7 @@ export class PreparedScriptPlaybackController {
       this.snapshotValue.mode = 'playing';
       this.snapshotValue.activeLayerId = this.snapshotValue.pendingLayerId ?? this.snapshotValue.activeLayerId;
       this.snapshotValue.pendingLayerId = null;
-      this.snapshotValue.activeAudioLayerId = this.snapshotValue.pendingAudioLayerId;
+      this.snapshotValue.activeAudioLayerId = this.snapshotValue.pendingAudioLayerId ?? this.snapshotValue.activeAudioLayerId;
       this.snapshotValue.pendingAudioLayerId = null;
       this.emit();
     }
@@ -222,7 +222,9 @@ export class PreparedScriptPlaybackController {
     const retainDisplayedVideo = incomingVideo && previous?.playbackType === 'video' && this.snapshotValue.activeLayerId !== script.mediaLayerId;
     // The successor plays hidden and reports a decoded frame. At that point
     // `onReady` performs one atomic hard cut; there is no transition layer.
-    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: retainDisplayedVideo ? this.snapshotValue.activeLayerId : script.mediaLayerId, pendingLayerId: retainDisplayedVideo ? script.mediaLayerId : null, activeAudioLayerId: incomingVideo ? null : script.audioLayerId, pendingAudioLayerId: incomingVideo ? script.audioLayerId : null, activeAvatarLayerId: script.avatarLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
+    // Start the companion audio immediately with the video request. The video
+    // still gates the visual handoff, but audio must not wait for that frame.
+    this.snapshotValue = { ...this.snapshotValue, mode: 'loading', activeScriptId: script.id, activeLayerId: retainDisplayedVideo ? this.snapshotValue.activeLayerId : script.mediaLayerId, pendingLayerId: retainDisplayedVideo ? script.mediaLayerId : null, activeAudioLayerId: script.audioLayerId, pendingAudioLayerId: null, activeAvatarLayerId: script.avatarLayerId, resumeActiveMedia, errorMessage: null, playbackRevision: this.snapshotValue.playbackRevision + 1 };
     this.emit(); return true;
   }
   private enqueue(scriptId: string, allowDuplicates = false): true {

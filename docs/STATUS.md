@@ -28,6 +28,10 @@
 
 ## Validation results
 
+- Desktop UI audit at `1720x988` captured before/after. The editor geometry now keeps the Timeline and go-live dock in the first viewport: desktop columns are `340px / flexible canvas / 278px`, with a responsive lower dock instead of the previous clipped `175px` footer.
+- `pnpm capture:ui artifacts/audit-final2`: passed (`UI_CAPTURE_OK`).
+- `git diff --check`: passed; only the existing Git LF/CRLF warning was printed.
+
 - `git diff --check`: passed; only Git CRLF conversion warnings were printed.
 - `pnpm typecheck`: passed (`vue-tsc --noEmit` and Electron TypeScript check).
 - `pnpm exec vitest run tests/unit/live-state-engine.test.ts tests/unit/scene-runtime-service.test.ts tests/unit/project-validation.test.ts`: passed, 3 files / 31 tests.
@@ -46,3 +50,56 @@
 ## Exact next task
 
 Investigate and reduce the 11.41% Scene Runtime visual diff, then run a real OBS Browser Source manual test covering the one-master-video/base-audio/cue-audio arrangement, a dragged/resized `DEMO` visual segment from 30s to 45s, a `WELCOME` cue interrupt and visual resume at 35.5s after cue-audio end, full-canvas local backgrounds, empty-state controls, and Playback Monitor values; then route a mock TikTok/AI decision through the same `PLAY_STATE` command boundary.
+
+## Latest work session - parallel video/audio script playback
+
+- Prepared script UI now models audio as an optional track inside a video script. The video remains the visible layer while the selected audio layer starts after the video reports a decoded frame.
+- Studio preview visibility and media activation both retain the active video when `activeAudioLayerId` is set, so playing audio no longer hides the video.
+- Script labels now state that video and audio play in parallel; audio mute and volume remain controllable from the script editor.
+- Validation: `pnpm typecheck` passed; prepared playback and project validation tests passed (32 tests); `pnpm test:video-playlist-smoke` passed earlier in this session.
+- Known workspace item: untracked `lailive.zip` was left untouched because it was not created intentionally during this work.
+
+## Latest correction - start companion audio in parallel
+
+- Prepared video scripts now mark their assigned `audioLayerId` active in the same playback revision as the video. Audio no longer waits for the video-ready callback; that callback only completes the visual handoff.
+- The Studio media binding no longer pauses the active audio while the script is in `loading`, and the ready transition preserves an already-active audio layer.
+- Validation: `pnpm typecheck`, 32 focused unit tests, and `pnpm test:video-playlist-smoke` all passed.
+
+## Latest correction - prevent destructive source removal
+
+- Source deletion now requires confirmation before removing the layer and its linked scripts.
+- Audio-only script creation was removed from the source assignment path. Audio can only be attached to a video/video-avatar script and is started as the companion track in that same script.
+- The prepared-script editor again exposes separate mute and volume controls for the video audio and the parallel audio track.
+- Validation: `pnpm typecheck` passed; prepared playback and project validation tests passed (31 tests).
+
+## Latest correction - remove orphaned timeline clips
+
+- Playback sync now removes prepared clips whose primary video/avatar source no longer exists, removes them from the active/queued controller state, and detaches missing companion audio without deleting the surviving video script.
+- Validation: `pnpm typecheck`; `pnpm exec vitest run tests/unit/prepared-script-playback.test.ts tests/unit/project-validation.test.ts` passed (31 tests); `git diff --check` passed with existing CRLF warnings.
+
+## Latest correction - remove source-less video clips
+
+- Timeline cleanup now also removes legacy `video`/`audio` scripts whose primary `mediaLayerId` is already `null`, which was the remaining case shown after deleting the last source.
+- Validation: `pnpm typecheck`; focused playback/project tests passed (31 tests).
+
+## Latest correction - hide invalid clips immediately
+
+- Timeline lanes now render only scripts with a valid primary source, and deleting a source explicitly stops stale playback before reconfiguring the controller.
+- Validation: `pnpm typecheck`; focused playback/project tests passed (31 tests).
+
+## Latest correction - remove legacy idle audio clips
+
+- Legacy standalone `audio` scripts in the idle lane are now removed/hidden; audio is only valid as a companion track on a video script. This fixes the remaining `R2 - ElevenLabs...` clip after visual sources are deleted.
+- Validation: `pnpm typecheck`; focused playback/project tests passed (31 tests).
+
+## Latest correction - purge legacy playback shapes
+
+- Runtime sync now removes every standalone `audio` prepared script and no longer promotes legacy audio data into a new playable clip. The supported shapes are video/avatar primary media, optional attached audio, and TTS.
+- Validation: `pnpm typecheck`; focused playback/project tests passed (31 tests).
+
+## Latest correction - stop deleted media immediately
+
+- `removeLayer` now reconfigures the playback controller and republishes the scene after the layer array is actually updated, preventing a stale runtime snapshot from continuing to play deleted media.
+- Removing a companion audio layer now detaches only `audioLayerId`; removing a video/avatar layer removes the associated script and stops active playback.
+- Startup sync now prunes orphaned scripts whose media layer was deleted in an older project, so stale clips disappear after reload as well.
+- Validation: `pnpm typecheck` passed; prepared playback and project validation tests passed (31 tests).

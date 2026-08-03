@@ -24,22 +24,24 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
 
   function sync(): void {
     const avatarLayerIds = new Set(options.layers.value.filter((layer) => layer.kind === 'avatar').map((layer) => layer.id));
-    // Older projects could retain a video/audio ID in this avatar-only field.
-    // Repair it before autosave so the project becomes valid without losing media.
+    const layerIds = new Set(options.layers.value.map((layer) => layer.id));
+    const orphanedScripts = scripts().filter((script) => (
+      // Standalone audio playback was a legacy shape; audio now belongs to a video script.
+      script.playbackType === 'audio'
+      || (script.playbackType === 'video' && script.mediaLayerId === null)
+      || (script.mediaLayerId !== null && !layerIds.has(script.mediaLayerId))
+      || (script.avatarLayerId !== null && !layerIds.has(script.avatarLayerId))
+    ));
+    if (orphanedScripts.length) {
+      controller.removeScripts(orphanedScripts.map((script) => script.id));
+      const orphaned = new Set(orphanedScripts);
+      scripts().splice(0, scripts().length, ...scripts().filter((script) => !orphaned.has(script)));
+      scripts().forEach((script, order) => { script.order = order; });
+    }
+    // Repair optional references before autosave so deleted companion audio cannot linger.
     scripts().forEach((script) => {
       if (script.avatarLayerId && !avatarLayerIds.has(script.avatarLayerId)) script.avatarLayerId = null;
-      // Older UI versions stored a standalone audio clip only as an attached
-      // track on an otherwise empty video script. Promote it to a playable clip.
-      if (script.playbackType === 'video' && script.mediaLayerId === null && script.audioLayerId) {
-        script.playbackType = 'audio';
-        script.mediaLayerId = script.audioLayerId;
-        script.audioLayerId = null;
-      }
-      if (script.playbackType === 'audio' && script.audioLayerId) {
-        // Audio cannot be both the primary source and a video-only attached track.
-        if (script.mediaLayerId === null) script.mediaLayerId = script.audioLayerId;
-        script.audioLayerId = null;
-      }
+      if (script.audioLayerId && !layerIds.has(script.audioLayerId)) script.audioLayerId = null;
     });
     controller.configure(options.scene.value.preparedScriptSettings, options.layers.value
       .filter((layer) => layer.kind === 'video' || layer.kind === 'audio' || layer.kind === 'avatar')
@@ -74,9 +76,17 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
   }
   function remove(index: number): void { scripts().splice(index, 1); normalize(); sync(); }
   function removeForLayer(layerId: string): void {
-    const removedScripts = scripts().filter((script) => script.mediaLayerId === layerId || script.audioLayerId === layerId || script.avatarLayerId === layerId);
+    // Removing companion audio must not remove its video script.
+    const removedScripts = scripts().filter((script) => script.mediaLayerId === layerId || script.avatarLayerId === layerId);
+    let detachedAudio = false;
+    scripts().forEach((script) => {
+      if (script.audioLayerId === layerId) {
+        script.audioLayerId = null;
+        detachedAudio = true;
+      }
+    });
     const remaining = scripts().filter((script) => !removedScripts.includes(script));
-    if (remaining.length === scripts().length) return;
+    if (remaining.length === scripts().length && !detachedAudio) return;
     const removedActive = removedScripts.some((script) => script.id === snapshot.value.activeScriptId);
     if (removedActive) cancelTts();
     controller.removeScripts(removedScripts.map((script) => script.id));

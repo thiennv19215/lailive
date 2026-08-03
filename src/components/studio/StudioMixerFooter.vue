@@ -8,9 +8,20 @@ import type { ProjectPreparedScript, ProjectSceneLayer } from '../../shared/cont
 
 const props = defineProps<{ obsStatus: ObsStatus; obsBusy: boolean; scripts: ProjectPreparedScript[]; snapshot: PreparedScriptPlaybackSnapshot; layers: ProjectSceneLayer[]; activeLayerIndex: number | null; stateMachineReady: boolean; stateMachineHint: string; }>();
 const emit = defineEmits<{ export: []; openPreparedScripts: []; openStateMachine: []; playRole: ['activation' | 'conversation']; playScript: [scriptId: string]; 'play-state': ['WELCOME' | 'CONSULT' | 'DEMO' | 'THANKS']; startSequence: []; pause: []; resume: []; skip: []; stop: []; settings: []; start: []; connectObs: []; toggleCamera: []; selectLayer: [index: number]; setLayerAudio: [layerId: string, muted: boolean, volume: number]; }>();
-const waitingScripts = () => props.scripts.filter((script) => script.role === 'idle');
-const priorityScripts = () => props.scripts.filter((script) => script.role === 'activation');
-const conversationScripts = () => props.scripts.filter((script) => script.role === 'conversation');
+function hasPlayablePrimarySource(script: ProjectPreparedScript): boolean {
+  if (script.playbackType === 'tts') return true;
+  // Standalone audio clips are legacy data; audio is valid only as a video track.
+  if (script.playbackType === 'audio' && script.role === 'idle') return false;
+  if (!script.mediaLayerId) return false;
+  const layer = props.layers.find((candidate) => candidate.id === script.mediaLayerId);
+  return script.playbackType === 'video'
+    ? layer?.kind === 'video' || layer?.kind === 'avatar'
+    : layer?.kind === 'audio';
+}
+const validScripts = () => props.scripts.filter(hasPlayablePrimarySource);
+const waitingScripts = () => validScripts().filter((script) => script.role === 'idle');
+const priorityScripts = () => validScripts().filter((script) => script.role === 'activation');
+const conversationScripts = () => validScripts().filter((script) => script.role === 'conversation');
 const mediaLayers = computed(() => props.layers.filter((layer) => ['video', 'avatar'].includes(layer.kind)));
 const activeLayer = computed(() => props.activeLayerIndex === null ? null : props.layers[props.activeLayerIndex] ?? null);
 const activeHasAudio = computed(() => Boolean(activeLayer.value && ['video', 'audio', 'avatar'].includes(activeLayer.value.kind)));

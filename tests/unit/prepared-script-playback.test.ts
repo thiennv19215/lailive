@@ -178,14 +178,14 @@ describe('prepared script playback controller', () => {
     expect(controller.snapshot()).toMatchObject({ activeScriptId: 'r3', queuedScriptIds: [] });
   });
 
-  it('starts an attached audio track only after its video has a decoded frame', () => {
+  it('starts an attached audio track in parallel after its video has a decoded frame', () => {
     const controller = new PreparedScriptPlaybackController(); controller.configure({
       ...settings,
       scripts: settings.scripts.map((script) => script.id === 'r1' ? { ...script, audioLayerId: 'audio-r2' } : script),
     }, layers);
     expect(controller.playScript('r1')).toBe(true);
     const revision = controller.snapshot().playbackRevision;
-    expect(controller.snapshot()).toMatchObject({ activeLayerId: 'video-r1', activeAudioLayerId: null, pendingAudioLayerId: 'audio-r2' });
+    expect(controller.snapshot()).toMatchObject({ activeLayerId: 'video-r1', activeAudioLayerId: 'audio-r2', pendingAudioLayerId: null });
     expect(controller.onReady('r1', revision)).toBe(true);
     expect(controller.snapshot()).toMatchObject({ activeLayerId: 'video-r1', activeAudioLayerId: 'audio-r2', pendingAudioLayerId: null });
     expect(controller.onEnded('r1', revision)).toBe(true);

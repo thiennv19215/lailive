@@ -25,12 +25,9 @@ function updateLayerVolume(layer: ProjectSceneLayer, event: Event): void {
 }
 
 function chooseMedia(script: ProjectPreparedScript, event: Event): void {
-  const previousMediaLayerId = script.mediaLayerId;
-  const previousPlaybackType = script.playbackType;
   const selectedId = (event.target as HTMLSelectElement).value || null;
   if (!selectedId) {
     script.mediaLayerId = null;
-    script.audioLayerId = null;
     emit('changed');
     return;
   }
@@ -38,11 +35,7 @@ function chooseMedia(script: ProjectPreparedScript, event: Event): void {
   if (!layer) return;
   script.mediaLayerId = layer.id;
   script.playbackType = layer.kind;
-  if (previousPlaybackType === 'audio' && previousMediaLayerId) {
-    // Choosing a video after an audio-only script means the operator wants
-    // that audio to become the video's synchronized companion track.
-    script.audioLayerId = previousMediaLayerId;
-  }
+  // Audio is assigned separately below and starts in parallel with this video.
   script.speechText = '';
   emit('changed');
 }
@@ -51,7 +44,7 @@ function chooseMedia(script: ProjectPreparedScript, event: Event): void {
 <template>
   <section class="source-panel playlist-panel">
     <header>
-      <span><strong>Danh sách kịch bản</strong><small>Video và audio kèm</small></span>
+      <span><strong>Danh sách kịch bản</strong><small>Video + audio phát song song</small></span>
       <button type="button" class="switch" :class="{ on: enabled }" :aria-pressed="enabled" @click="emit('toggle')"><span /></button>
     </header>
 
@@ -82,27 +75,27 @@ function chooseMedia(script: ProjectPreparedScript, event: Event): void {
         </div>
         <div class="prepared-script-fields">
           <label>Luồng phát<select v-model="script.role" @change="emit('changed')"><option value="idle">Vòng lặp nền</option><option value="activation">Chờ phát ưu tiên</option><option value="conversation">Phản hồi tức thời</option></select></label>
-          <label>Nguồn phát<select :value="script.mediaLayerId ?? ''" @change="chooseMedia(script, $event)"><option value="">Chọn video</option><option v-for="layer in playableLayers()" :key="layer.id" :value="layer.id">Video - {{ sourceDisplayName(layer) }}</option></select></label>
-          <label>Audio kèm<select v-model="script.audioLayerId" :disabled="script.playbackType !== 'video'" @change="emit('changed')"><option :value="null">Không có audio kèm</option><option v-for="layer in audioLayers()" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
+          <label>Nguồn video<select :value="script.mediaLayerId ?? ''" @change="chooseMedia(script, $event)"><option value="">Chọn video</option><option v-for="layer in playableLayers()" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
+          <label>Audio phát song song<select v-model="script.audioLayerId" :disabled="script.playbackType !== 'video'" @change="emit('changed')"><option :value="null">Không có audio</option><option v-for="layer in audioLayers()" :key="layer.id" :value="layer.id">{{ sourceDisplayName(layer) }}</option></select></label>
         </div>
         <div v-if="layerFor(script.mediaLayerId) || layerFor(script.audioLayerId)" class="prepared-script-audio-mixer">
           <div v-if="layerFor(script.mediaLayerId)" class="prepared-script-audio-channel">
-            <span>{{ script.playbackType === 'video' ? 'Am thanh video' : 'Am thanh script' }}</span>
+            <span>Âm thanh video</span>
             <button type="button" :aria-label="layerFor(script.mediaLayerId)!.muted ? 'Bat am thanh script' : 'Tat am thanh script'" :aria-pressed="layerFor(script.mediaLayerId)!.muted" @click="toggleLayerMute(layerFor(script.mediaLayerId)!)">{{ layerFor(script.mediaLayerId)!.muted ? 'Bat tieng' : 'Tat tieng' }}</button>
             <input type="range" min="0" max="1" step="0.05" :value="layerFor(script.mediaLayerId)!.volume" aria-label="Am luong script" @input="updateLayerVolume(layerFor(script.mediaLayerId)!, $event)" />
           </div>
           <div v-if="layerFor(script.audioLayerId)" class="prepared-script-audio-channel">
-            <span>Audio kem (phat cung video)</span>
-            <button type="button" :aria-label="layerFor(script.audioLayerId)!.muted ? 'Bat audio kem' : 'Tat audio kem'" :aria-pressed="layerFor(script.audioLayerId)!.muted" @click="toggleLayerMute(layerFor(script.audioLayerId)!)">{{ layerFor(script.audioLayerId)!.muted ? 'Bat tieng' : 'Tat tieng' }}</button>
-            <input type="range" min="0" max="1" step="0.05" :value="layerFor(script.audioLayerId)!.volume" aria-label="Am luong audio kem" @input="updateLayerVolume(layerFor(script.audioLayerId)!, $event)" />
+            <span>Audio phát song song</span>
+            <button type="button" :aria-label="layerFor(script.audioLayerId)!.muted ? 'Bật audio' : 'Tắt audio'" :aria-pressed="layerFor(script.audioLayerId)!.muted" @click="toggleLayerMute(layerFor(script.audioLayerId)!)">{{ layerFor(script.audioLayerId)!.muted ? 'Bật tiếng' : 'Tắt tiếng' }}</button>
+            <input type="range" min="0" max="1" step="0.05" :value="layerFor(script.audioLayerId)!.volume" aria-label="Âm lượng audio" @input="updateLayerVolume(layerFor(script.audioLayerId)!, $event)" />
           </div>
         </div>
       </li>
     </ol>
     <div class="playlist-add-list">
       <header><span><strong>Thêm cảnh vào luồng</strong><small>Cảnh ưu tiên phát ngay, rồi quay lại vòng lặp nền.</small></span><button type="button" class="playlist-add-voice" @click="emit('add', 'tts', null, 'activation')">+ Thoại ưu tiên</button></header>
-      <div v-for="layer in playableLayers()" :key="layer.id" class="playlist-add-source"><strong>{{ sourceDisplayName(layer) }}</strong><span>Video</span><div><button type="button" @click="emit('add', layer.kind, layer.id, 'idle')">+ Vòng lặp</button><button type="button" class="priority" @click="emit('add', layer.kind, layer.id, 'activation')">+ Ưu tiên</button></div></div>
-      <small v-if="!playableLayers().length">Thêm video từ Nguồn để tạo cảnh; audio được gắn trong từng video.</small>
+      <div v-for="layer in playableLayers()" :key="layer.id" class="playlist-add-source"><strong>{{ sourceDisplayName(layer) }}</strong><span>Video + audio tùy chọn</span><div><button type="button" @click="emit('add', layer.kind, layer.id, 'idle')">+ Vòng lặp</button><button type="button" class="priority" @click="emit('add', layer.kind, layer.id, 'activation')">+ Ưu tiên</button></div></div>
+      <small v-if="!playableLayers().length">Thêm video từ Nguồn để tạo Kịch bản; audio chọn riêng trong từng mục.</small>
     </div>
   </section>
 </template>
