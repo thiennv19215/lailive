@@ -13,6 +13,7 @@
 
 - Corrected `run-long-session-soak.mjs` so configured soak time starts after application/service initialization and resource baselines, and so an empty iteration run fails. The harness now validates each setting write response and stops the virtual camera only when it is app-owned, avoiding a false cleanup error from the OBS mock adapter.
 - `AI_LIVESTREAM_SOAK_MINUTES=120 pnpm test:long-session-soak` passed: 1,426 iterations, 118 fault/reconnect cycles, peak log bound 2,000, Renderer peak 29.1MB / 685 nodes, and Scene Runtime peak 2.8MB / 35 nodes. This is strong mock-adapter lifecycle evidence, not a real OBS Browser Source verification.
+- `pnpm test:video-playlist-smoke` passed 100 visual/audio playlist transitions (`R1-R2-R3`).
 - Real OBS remains unverified: OBS Studio was installed and configured for loopback WebSocket port 4455 without authentication, but its process did not open the listener when launched for the smoke test. No real scene/source was modified after the listener check failed.
 
 ## Latest work session - Timeline Engine ownership and independent media continuity
