@@ -15,7 +15,8 @@ const cdpPort = Math.round(readNumber('AI_LIVESTREAM_SOAK_CDP_PORT', 9270, 1024,
 const maximumHeapGrowthBytes = readNumber('AI_LIVESTREAM_SOAK_MAX_HEAP_GROWTH_MB', 192, 16, 2048) * 1024 * 1024;
 const maximumNodeGrowth = Math.round(readNumber('AI_LIVESTREAM_SOAK_MAX_NODE_GROWTH', 10_000, 100, 1_000_000));
 const profileDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-livestream-long-session-soak-'));
-const deadline = Date.now() + durationMinutes * 60_000;
+const soakDurationMs = durationMinutes * 60_000;
+let deadline = 0;
 
 function readNumber(name, fallback, minimum, maximum) {
   const value = process.env[name] === undefined ? fallback : Number(process.env[name]);
@@ -143,6 +144,10 @@ try {
   runtimePeakHeapBytes = runtimeBaseline.heapBytes;
   rendererPeakNodes = rendererBaseline.nodes;
   runtimePeakNodes = runtimeBaseline.nodes;
+  // Startup is not soak time. Begin measurement only after every dependency
+  // and its resource baseline is ready, otherwise a short configured run can
+  // report success without executing an iteration.
+  deadline = Date.now() + soakDurationMs;
 
   while (Date.now() < deadline) {
     iterations += 1;
@@ -151,7 +156,7 @@ try {
       const api = globalThis.window.desktopApi;
       const avatarState = iteration % 2 === 0 ? 'idle' : 'talking';
       const queueCount = iteration % 101;
-      await api.settings.set('smoke.long-session-iteration', iteration);
+      const marker = await api.settings.set('smoke.long-session-iteration', iteration);
       await api.ai.generate({ requestId: `long-ai-${iteration}`, systemMessage: 'Safe local soak.', userMessage: `Iteration ${iteration}`, timeoutMs: 5_000, retryCount: 0 });
       await api.tts.synthesize({ requestId: `long-tts-${iteration}`, text: `Local soak ${iteration}`, voice: 'Ngoc Lam', speed: 1, volume: 1, timeoutMs: 5_000 });
       await api.sceneRuntime.publish(project.scene, avatarState);
@@ -176,11 +181,12 @@ try {
 
       const diagnostics = await api.diagnostics.getSnapshot();
       const logs = await api.diagnostics.listLogs({ limit: 2_000 });
-      return { health: diagnostics.health, logCount: logs.length };
+      return { health: diagnostics.health, logCount: logs.length, marker };
     }, { project: initial.project, productId: initial.productId, iteration: iterations, shouldInjectFault: injectFault });
 
     if (injectFault) faultCycles += 1;
     peakLogs = Math.max(peakLogs, result.logCount);
+    if (result.marker?.value !== iterations) throw new Error(`Long-session marker write was invalid at iteration ${iterations}: ${JSON.stringify(result.marker)}`);
     if (result.health.length !== 7 || result.logCount > 2_000) throw new Error(`Long-session bounds failed at iteration ${iterations}.`);
     if (result.health.some((item) => item.status === 'error')) throw new Error(`Long-session health error at iteration ${iterations}: ${JSON.stringify(result.health)}`);
     const runtimeState = await runtimePage.evaluate(() => ({ root: Boolean(globalThis.document.querySelector('#scene')), width: globalThis.document.documentElement.scrollWidth }));
@@ -200,20 +206,21 @@ try {
     if (remainingMs > 0) await new Promise((resolve) => globalThis.setTimeout(resolve, Math.min(intervalMs, remainingMs)));
   }
 
+  if (iterations === 0) throw new Error('Long-session soak completed without an iteration.');
+
   const final = await page.evaluate(async () => {
     const api = globalThis.window.desktopApi;
-    const marker = await api.settings.get('smoke.long-session-iteration');
     const logs = await api.diagnostics.listLogs({ limit: 2_000 });
     const exported = await api.diagnostics.exportLogs({ limit: 2_000 });
     await api.live.disconnect();
     await api.ai.cancelAll();
     await api.tts.cancelAll();
-    await api.obs.stopVirtualCamera().catch(() => undefined);
+    const obs = await api.obs.getStatus();
+    if (obs.virtualCameraOwned) await api.obs.stopVirtualCamera();
     await api.obs.disconnect();
     await api.shop.disconnect();
-    return { marker, logs: logs.length, exported };
+    return { logs: logs.length, exported };
   });
-  if (final.marker?.value !== iterations) throw new Error(`Final long-session marker is invalid: ${JSON.stringify(final.marker)}`);
   if (/sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._-]+/i.test(final.exported)) throw new Error('Long-session export contains a secret-shaped value.');
   if (/renderer (?:error|warning):|renderer pageerror:/i.test(output)) throw new Error(`Long-session renderer output was not clean:${output}`);
   const rendererFinal = await readPageResources(rendererSession);

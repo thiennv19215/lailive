@@ -9,6 +9,12 @@
 - Repaired the Scene Runtime visual gate so it compares the visible Studio canvas against a same-size Browser Source canvas. The harness now removes only editor affordances, avoids capturing beyond either target's viewport, allows the test-only Studio canvas to render outside its dock clip, and normalizes the one-pixel Electron screenshot rounding difference with bilinear sampling.
 - `pnpm test:scene-runtime-smoke` now passes with editor-to-runtime propagation in 43ms and a 2.50% pixel difference. This validates the no-blank-frame Browser Source presentation for the deterministic scene fixture; it is not real OBS or long-video soak evidence.
 
+## Latest work session - long-session reliability soak
+
+- Corrected `run-long-session-soak.mjs` so configured soak time starts after application/service initialization and resource baselines, and so an empty iteration run fails. The harness now validates each setting write response and stops the virtual camera only when it is app-owned, avoiding a false cleanup error from the OBS mock adapter.
+- `AI_LIVESTREAM_SOAK_MINUTES=120 pnpm test:long-session-soak` passed: 1,426 iterations, 118 fault/reconnect cycles, peak log bound 2,000, Renderer peak 29.1MB / 685 nodes, and Scene Runtime peak 2.8MB / 35 nodes. This is strong mock-adapter lifecycle evidence, not a real OBS Browser Source verification.
+- Real OBS remains unverified: OBS Studio was installed and configured for loopback WebSocket port 4455 without authentication, but its process did not open the listener when launched for the smoke test. No real scene/source was modified after the listener check failed.
+
 ## Latest work session - Timeline Engine ownership and independent media continuity
 
 - Added `TimelinePlaybackController` as the sole Scene Runtime publication boundary. Its owner changes only after an explicit operator handoff and that source's next accepted publication; passive/autosave publishers cannot replace active program output.
