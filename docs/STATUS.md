@@ -20,6 +20,11 @@
 
 - `pnpm test` passed: 43 test files / 228 tests, including Timeline ownership, manual continuity, Prepared Program playback, Scene Runtime, OBS adapter, persistence, resilience, media, and shop integration coverage.
 
+## Latest validation gate - real OBS Browser Source
+
+- OBS Studio 32.2.1 exposed its WebSocket server only on IPv6 loopback (`::1:4455`) while the saved adapter default was IPv4. Updated the OBS smoke harness to accept `AI_LIVESTREAM_OBS_HOST` and format IPv6 WebSocket URLs correctly; this keeps the product's loopback-only validation intact.
+- Real `obs-websocket` smoke passed against OBS with `AI_LIVESTREAM_OBS_HOST=::1`: Browser Source was created/updated, Scene Runtime reported a ready client with no runtime warnings/errors, OBS captured the Browser Source output, and six virtual-camera start/stop cycles plus reconnect recovery passed (`OBS_SMOKE_OK kind=obs-websocket cycles=6 reconnect=ok`).
+
 ## Latest work session - Timeline Engine ownership and independent media continuity
 
 - Added `TimelinePlaybackController` as the sole Scene Runtime publication boundary. Its owner changes only after an explicit operator handoff and that source's next accepted publication; passive/autosave publishers cannot replace active program output.

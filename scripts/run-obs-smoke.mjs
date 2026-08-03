@@ -16,6 +16,7 @@ const artifactDirectory = path.resolve('artifacts/rebuild/obs');
 fs.mkdirSync(artifactDirectory, { recursive: true });
 const port = 9254;
 const obsKind = process.env.AI_LIVESTREAM_OBS_KIND ?? 'mock';
+const obsHost = process.env.AI_LIVESTREAM_OBS_HOST ?? '127.0.0.1';
 const obsPort = Number(process.env.AI_LIVESTREAM_OBS_PORT ?? '4455');
 const obsPassword = process.env.AI_LIVESTREAM_OBS_PASSWORD ?? 'session-secret';
 const cameraCycles = Number(process.env.AI_LIVESTREAM_OBS_CAMERA_CYCLES ?? '6');
@@ -36,7 +37,7 @@ async function waitForCdp() {
 }
 
 async function captureRealObsSource() {
-  const socket = new WebSocket(`ws://127.0.0.1:${obsPort}`);
+  const socket = new WebSocket(`ws://${obsHost.includes(':') ? `[${obsHost}]` : obsHost}:${obsPort}`);
   const messages = [];
   const waiters = new Set();
   socket.on('message', (raw) => {
@@ -114,11 +115,11 @@ try {
   await page.locator('.studio-page').waitFor({ state: 'visible' });
 
   const secretCheck = await page.evaluate(async (config) => {
-    const input = { kind: config.kind, host: '127.0.0.1', port: config.port, sceneName: config.sceneName, sourceName: config.sourceName, width: 1080, height: 1920, fps: 30, password: config.password };
+    const input = { kind: config.kind, host: config.host, port: config.port, sceneName: config.sceneName, sourceName: config.sourceName, width: 1080, height: 1920, fps: 30, password: config.password };
     const saved = await globalThis.window.desktopApi.obs.setConfig(input);
     const publicConfig = await globalThis.window.desktopApi.obs.getConfig();
     return { saved, publicConfig };
-  }, { kind: obsKind, port: obsPort, password: obsPassword, sceneName, sourceName });
+  }, { kind: obsKind, host: obsHost, port: obsPort, password: obsPassword, sceneName, sourceName });
   if ('password' in secretCheck.saved || 'password' in secretCheck.publicConfig || !secretCheck.publicConfig.hasPassword) {
     throw new Error('OBS password was exposed or lost from the current session flag.');
   }
