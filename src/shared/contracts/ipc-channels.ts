@@ -50,6 +50,8 @@ export const IPC_CHANNELS = {
   sceneRuntimePublish: 'scene-runtime:publish',
   sceneRuntimePlaybackEnded: 'scene-runtime:playback-ended',
   sceneRuntimeTtsEvent: 'scene-runtime:tts-event',
+  timelineGetSnapshot: 'timeline:get-snapshot',
+  timelineHandoff: 'timeline:handoff',
   manualVideoList: 'video:list',
   manualVideoImport: 'video:import',
   manualVideoPlay: 'video:play',

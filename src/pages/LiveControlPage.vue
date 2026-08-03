@@ -6,6 +6,7 @@ import AppShell from '../components/AppShell.vue';
 import type { ManualAudioSnapshot, ManualVideoSnapshot } from '../shared/contracts/manual-live';
 import type { ObsStatus } from '../shared/contracts/obs';
 import type { SceneRuntimeStatus } from '../shared/contracts/scene-runtime';
+import type { TimelineOwnershipSnapshot } from '../shared/contracts/timeline';
 
 const emptyVideo: ManualVideoSnapshot = { playlist: [], currentIndex: null, state: 'idle', loop: false, revision: 0 };
 const emptyAudio: ManualAudioSnapshot = { queue: [], currentIndex: null, state: 'idle', volume: 1, autoNext: true, revision: 0 };
@@ -14,7 +15,9 @@ const video = ref<ManualVideoSnapshot>(emptyVideo);
 const audio = ref<ManualAudioSnapshot>(emptyAudio);
 const sceneStatus = ref<SceneRuntimeStatus | null>(null);
 const obsStatus = ref<ObsStatus | null>(null);
+const timeline = ref<TimelineOwnershipSnapshot | null>(null);
 const notice = ref('');
+const commandInFlight = ref(false);
 let removeVideoSnapshot: (() => void) | null = null;
 let removeAudioSnapshot: (() => void) | null = null;
 let statusTimer: ReturnType<typeof globalThis.setInterval> | null = null;
@@ -23,6 +26,16 @@ const currentVideo = computed(() => video.value.currentIndex === null ? null : v
 const currentAudio = computed(() => audio.value.currentIndex === null ? null : audio.value.queue[audio.value.currentIndex] ?? null);
 const obsLabel = computed(() => obsStatus.value?.connected ? 'CONNECTED' : 'MOCK / OFFLINE');
 const sceneLabel = computed(() => sceneStatus.value?.running ? 'READY' : 'OFFLINE');
+const timelineOwnerLabel = computed(() => {
+  const labels = {
+    studio: 'STUDIO',
+    'manual-live': 'MANUAL LIVE',
+    'live-state': 'LIVE STATE',
+    'prepared-live-program': 'LIVE PROGRAM',
+  } as const;
+  return timeline.value?.owner ? labels[timeline.value.owner] : 'UNASSIGNED';
+});
+const manualOwnsTimeline = computed(() => timeline.value?.owner === 'manual-live');
 
 onMounted(async () => {
   removeVideoSnapshot = desktopApi.manualLive.video.onSnapshot((snapshot) => { video.value = snapshot; });
@@ -48,9 +61,10 @@ async function refreshState(): Promise<void> {
 }
 
 async function refreshExternalStatus(): Promise<void> {
-  [sceneStatus.value, obsStatus.value] = await Promise.all([
+  [sceneStatus.value, obsStatus.value, timeline.value] = await Promise.all([
     desktopApi.sceneRuntime.getStatus(),
     desktopApi.obs.getStatus(),
+    desktopApi.timeline.getSnapshot(),
   ]);
 }
 
@@ -64,6 +78,7 @@ async function importAudio(): Promise<void> {
 
 async function importMedia(kind: 'video' | 'audio'): Promise<void> {
   notice.value = '';
+  if (!await claimManualTimeline()) return;
   const references = await desktopApi.media.pickMany(kind, kind === 'video' ? 'Import Video' : 'Import Audio');
   if (references.length === 0) return;
   if (kind === 'video') video.value = await desktopApi.manualLive.video.import({ references });
@@ -71,14 +86,31 @@ async function importMedia(kind: 'video' | 'audio'): Promise<void> {
   notice.value = `Đã thêm ${references.length} tệp ${kind === 'video' ? 'video' : 'audio'}.`;
 }
 
-async function run(command: () => Promise<ManualVideoSnapshot | ManualAudioSnapshot>): Promise<void> {
-  notice.value = '';
+async function claimManualTimeline(): Promise<boolean> {
+  const previousOwner = timeline.value?.owner;
   try {
+    timeline.value = await desktopApi.timeline.handoff('manual-live');
+    if (previousOwner && previousOwner !== 'manual-live') notice.value = `Timeline control transferred from ${previousOwner}.`;
+    return true;
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : 'Unable to claim timeline control.';
+    return false;
+  }
+}
+
+async function run(command: () => Promise<ManualVideoSnapshot | ManualAudioSnapshot>): Promise<void> {
+  if (commandInFlight.value) return;
+  notice.value = '';
+  commandInFlight.value = true;
+  try {
+    if (!await claimManualTimeline()) return;
     const snapshot = await command();
     if ('playlist' in snapshot) video.value = snapshot;
     else audio.value = snapshot;
   } catch (error) {
     notice.value = error instanceof Error ? error.message : 'Không thể thực hiện lệnh.';
+  } finally {
+    commandInFlight.value = false;
   }
 }
 
@@ -97,12 +129,13 @@ function setVolume(event: Event): void {
           <h1>LIVE CONTROL</h1>
           <p>Manual transport desk · video và audio độc lập.</p>
         </div>
-        <div class="live-control-runtime"><span class="runtime-dot" :class="{ ready: sceneStatus?.running }" /><span>SCENE {{ sceneLabel }}</span><b>{{ obsLabel }}</b></div>
+        <div class="live-control-runtime"><span class="runtime-dot" :class="{ ready: sceneStatus?.running }" /><span>SCENE {{ sceneLabel }}</span><span class="runtime-owner" :class="{ active: manualOwnsTimeline }">OWNER {{ timelineOwnerLabel }}</span><b>{{ obsLabel }}</b></div>
       </header>
 
       <div class="live-control-toolbar" role="toolbar" aria-label="Live control overview">
         <span class="toolbar-mode"><Activity :size="14" /> PROGRAM</span>
         <span class="toolbar-divider" />
+        <span class="toolbar-owner" :class="{ active: manualOwnsTimeline }">TIMELINE OWNER <b>{{ timelineOwnerLabel }}</b></span>
         <span>VIDEO <b :class="`toolbar-state toolbar-state--${video.state}`">{{ video.state.toUpperCase() }}</b></span>
         <span>AUDIO <b :class="`toolbar-state toolbar-state--${audio.state}`">{{ audio.state.toUpperCase() }}</b></span>
         <span class="toolbar-spacer" />
@@ -120,23 +153,23 @@ function setVolume(event: Event): void {
             <small>{{ video.state.toUpperCase() }} · {{ video.playlist.length }} tệp</small>
           </div>
           <div class="live-actions live-actions--five">
-            <button type="button" :disabled="video.playlist.length === 0" @click="run(() => desktopApi.manualLive.video.play())"><Play :size="15" />Play</button>
-            <button type="button" :disabled="video.state !== 'playing'" @click="run(() => desktopApi.manualLive.video.pause())"><Pause :size="15" />Pause</button>
-            <button type="button" :disabled="video.currentIndex === null" @click="run(() => desktopApi.manualLive.video.stop())"><CircleStop :size="15" />Stop</button>
-            <button type="button" class="loop-button" :class="{ active: video.loop }" @click="run(() => desktopApi.manualLive.video.setLoop(!video.loop))">Loop {{ video.loop ? 'ON' : 'OFF' }}</button>
-            <button type="button" class="import-button" @click="importVideo"><FolderOpen :size="15" />Import Video</button>
+            <button type="button" :disabled="commandInFlight || video.playlist.length === 0" @click="run(() => desktopApi.manualLive.video.play())"><Play :size="15" />Play</button>
+            <button type="button" :disabled="commandInFlight || video.state !== 'playing'" @click="run(() => desktopApi.manualLive.video.pause())"><Pause :size="15" />Pause</button>
+            <button type="button" :disabled="commandInFlight || video.currentIndex === null" @click="run(() => desktopApi.manualLive.video.stop())"><CircleStop :size="15" />Stop</button>
+            <button type="button" :disabled="commandInFlight" class="loop-button" :class="{ active: video.loop }" @click="run(() => desktopApi.manualLive.video.setLoop(!video.loop))">Loop {{ video.loop ? 'ON' : 'OFF' }}</button>
+            <button type="button" :disabled="commandInFlight" class="import-button" @click="importVideo"><FolderOpen :size="15" />Import Video</button>
           </div>
-          <div class="live-switch-row"><button type="button" :disabled="video.playlist.length === 0" @click="run(() => desktopApi.manualLive.video.previous())"><SkipBack :size="15" />Previous</button><button type="button" :disabled="video.playlist.length === 0" @click="run(() => desktopApi.manualLive.video.next())">Next<SkipForward :size="15" /></button></div>
+          <div class="live-switch-row"><button type="button" :disabled="commandInFlight || video.playlist.length === 0" @click="run(() => desktopApi.manualLive.video.previous())"><SkipBack :size="15" />Previous</button><button type="button" :disabled="commandInFlight || video.playlist.length === 0" @click="run(() => desktopApi.manualLive.video.next())">Next<SkipForward :size="15" /></button></div>
           <div class="live-playlist"><div class="live-list-heading"><span>PLAYLIST</span><b>{{ video.playlist.length }}</b></div><ol><li v-for="(item, index) in video.playlist" :key="item.id" :class="{ active: index === video.currentIndex }"><span>{{ index + 1 }}</span><strong>{{ item.label }}</strong><small>{{ index === video.currentIndex ? video.state.toUpperCase() : 'READY' }}</small></li></ol><p v-if="video.playlist.length === 0" class="live-empty">Import một hoặc nhiều video để bắt đầu.</p></div>
         </article>
 
         <article class="live-panel manual-audio-panel">
           <header class="live-panel-heading"><span class="panel-icon panel-icon--audio"><AudioLines :size="18" /></span><div><strong>AUDIO PANEL</strong><small>Independent OBS audio source</small></div></header>
           <div class="live-now-playing live-now-playing--audio"><span class="live-now-label">AUDIO HIỆN TẠI</span><strong>{{ currentAudio?.label ?? 'Chưa có audio' }}</strong><small>{{ audio.state.toUpperCase() }} · {{ audio.queue.length }} tệp</small></div>
-          <div class="live-actions live-actions--four"><button type="button" :disabled="audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.play())"><Play :size="15" />Play</button><button type="button" :disabled="audio.state !== 'playing'" @click="run(() => desktopApi.manualLive.audio.pause())"><Pause :size="15" />Pause</button><button type="button" :disabled="audio.currentIndex === null" @click="run(() => desktopApi.manualLive.audio.stop())"><CircleStop :size="15" />Stop</button><button type="button" class="import-button" @click="importAudio"><FolderOpen :size="15" />Import Audio</button></div>
-          <div class="live-switch-row"><button type="button" :disabled="audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.previous())"><SkipBack :size="15" />Previous</button><button type="button" :disabled="audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.next())">Next<SkipForward :size="15" /></button></div>
-          <label class="volume-control"><span><Volume2 :size="15" />Volume <b>{{ Math.round(audio.volume * 100) }}%</b></span><input :value="audio.volume" type="range" min="0" max="1" step="0.01" @input="setVolume" /></label>
-          <label class="auto-next-control"><input :checked="audio.autoNext" type="checkbox" @change="run(() => desktopApi.manualLive.audio.setAutoNext(!audio.autoNext))" />Auto play next</label>
+          <div class="live-actions live-actions--four"><button type="button" :disabled="commandInFlight || audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.play())"><Play :size="15" />Play</button><button type="button" :disabled="commandInFlight || audio.state !== 'playing'" @click="run(() => desktopApi.manualLive.audio.pause())"><Pause :size="15" />Pause</button><button type="button" :disabled="commandInFlight || audio.currentIndex === null" @click="run(() => desktopApi.manualLive.audio.stop())"><CircleStop :size="15" />Stop</button><button type="button" :disabled="commandInFlight" class="import-button" @click="importAudio"><FolderOpen :size="15" />Import Audio</button></div>
+          <div class="live-switch-row"><button type="button" :disabled="commandInFlight || audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.previous())"><SkipBack :size="15" />Previous</button><button type="button" :disabled="commandInFlight || audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.next())">Next<SkipForward :size="15" /></button></div>
+          <label class="volume-control"><span><Volume2 :size="15" />Volume <b>{{ Math.round(audio.volume * 100) }}%</b></span><input :value="audio.volume" :disabled="commandInFlight" type="range" min="0" max="1" step="0.01" @input="setVolume" /></label>
+          <label class="auto-next-control"><input :checked="audio.autoNext" :disabled="commandInFlight" type="checkbox" @change="run(() => desktopApi.manualLive.audio.setAutoNext(!audio.autoNext))" />Auto play next</label>
           <div class="live-playlist"><div class="live-list-heading"><span>PLAYLIST</span><b>{{ audio.queue.length }}</b></div><ol><li v-for="(item, index) in audio.queue" :key="item.id" :class="{ active: index === audio.currentIndex }"><span>{{ index + 1 }}</span><strong>{{ item.label }}</strong><small>{{ index === audio.currentIndex ? audio.state.toUpperCase() : 'READY' }}</small></li></ol><p v-if="audio.queue.length === 0" class="live-empty">Import một hoặc nhiều audio để tạo queue.</p></div>
         </article>
 
@@ -154,7 +187,9 @@ function setVolume(event: Event): void {
 .live-control-heading p { margin: 0; color: #8e8e8e; font-size: 11px; }
 .live-control-runtime { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 10px; border: 1px solid #3a3a3a; border-radius: 4px; background: #202020; color: #aaa; font-size: 9px; font-weight: 700; letter-spacing: .07em; }
 .live-control-runtime b { color: #d7d7d7; font-size: 8px; }.runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: #c46d3b; box-shadow: 0 0 0 3px rgba(196,109,59,.12); }.runtime-dot.ready { background: #64c98a; box-shadow: 0 0 0 3px rgba(100,201,138,.12); }
+.runtime-owner { color: #a0a0aa; }.runtime-owner.active { color: #70d29a; }
 .live-control-toolbar { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 12px; padding: 0 10px; border: 1px solid #303030; border-radius: 4px; background: #202020; color: #9e9e9e; font-size: 9px; font-weight: 700; letter-spacing: .06em; }.toolbar-mode { display: inline-flex; align-items: center; gap: 6px; color: #e3e3e3; }.toolbar-mode svg { color: #ff8b45; }.toolbar-divider { width: 1px; height: 16px; background: #3a3a3a; }.toolbar-spacer { flex: 1; }.toolbar-hint { color: #6f6f6f; font-size: 8px; font-weight: 500; letter-spacing: 0; }.toolbar-state { margin-left: 4px; color: #c17d52; font-size: 8px; }.toolbar-state--playing { color: #6ed091; }.toolbar-state--paused { color: #d7aa64; }
+.toolbar-owner { color: #a2a2aa; }.toolbar-owner b { color: #e0c4a4; }.toolbar-owner.active b { color: #70d29a; }
 .live-control-notice { margin: -2px 0 12px; padding: 8px 10px; border: 1px solid #785034; border-radius: 4px; background: #2a211b; color: #efb789; font-size: 10px; }
 .live-control-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 270px; gap: 10px; align-items: stretch; }
 .live-panel, .live-status-panel { min-width: 0; border: 1px solid #383838; border-radius: 4px; background: #202020; box-shadow: 0 8px 20px rgba(0,0,0,.18); overflow: hidden; }

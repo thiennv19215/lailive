@@ -11,6 +11,7 @@ import { LiveSessionService } from '../services/live-connector';
 import { AiProviderService } from '../services/ai-provider';
 import { TtsProviderService } from '../services/tts-provider';
 import { SceneRuntimeService } from '../services/scene-runtime';
+import { TimelinePlaybackController } from '../services/timeline-playback-controller';
 import { ObsService } from '../services/obs';
 import { ShopService } from '../services/shop';
 import { DiagnosticsService } from '../services/diagnostics';
@@ -29,6 +30,7 @@ let database: SettingsDatabase | null = null;
 let aiService: AiProviderService | null = null;
 let ttsService: TtsProviderService | null = null;
 let sceneRuntimeService: SceneRuntimeService | null = null;
+let timelinePlaybackController: TimelinePlaybackController | null = null;
 let obsService: ObsService | null = null;
 let shopService: ShopService | null = null;
 let diagnosticsService: DiagnosticsService | null = null;
@@ -108,7 +110,10 @@ function publishPreparedLiveProgramSnapshot(snapshot: PreparedLiveProgramSnapsho
     presentation.preloadLayerId = presentation.preloadLayerIds[0] ?? null;
   }
   try {
-    sceneRuntimeService.publish(preparedLiveProgramScene, activeAudioLayerId ? 'talking' : 'idle', presentation);
+    timelinePlaybackController?.publish({
+      owner: 'prepared-live-program', scene: preparedLiveProgramScene, avatarState: activeAudioLayerId ? 'talking' : 'idle', presentation,
+      claim: snapshot.visualPlaying,
+    });
   } catch (error) {
     diagnosticsService?.recordThrottled('prepared-live-program:scene-publish', 5_000, {
       level: 'error', source: 'prepared-live-program', message: 'Prepared live program could not publish to Scene Runtime.',
@@ -151,7 +156,10 @@ function publishLiveStateSnapshot(snapshot: LiveStateSnapshot): void {
     presentation.preloadLayerIds = preloadLayers.map((layer) => layer.id);
   }
   try {
-    sceneRuntimeService.publish(liveStateScene, snapshot.definition.audio ? 'talking' : 'idle', presentation);
+    timelinePlaybackController?.publish({
+      owner: 'live-state', scene: liveStateScene, avatarState: snapshot.definition.audio ? 'talking' : 'idle', presentation,
+      claim: snapshot.state !== 'IDLE',
+    });
   } catch (error) {
     diagnosticsService?.recordThrottled('live-state:scene-publish', 5_000, {
       level: 'error', source: 'live-state', message: 'State Engine could not publish to Scene Runtime.',
@@ -160,12 +168,12 @@ function publishLiveStateSnapshot(snapshot: LiveStateSnapshot): void {
   }
 }
 
-function toLiveRuntimeEvent(event: SceneRuntimeMediaEvent): LiveRuntimeEvent | null {
+function toLiveRuntimeEvent(event: SceneRuntimeMediaEvent, revision: number): LiveRuntimeEvent | null {
   if (event.kind === 'seeked') return null;
-  if (event.kind === 'error') return { kind: 'error', revision: event.revision, message: event.error ?? 'SCENE_RUNTIME_MEDIA_ERROR', currentTime: event.currentTime ?? undefined };
-  if (event.kind === 'ended') return { kind: 'ended', revision: event.revision, currentTime: event.currentTime ?? undefined };
-  if (event.kind === 'progress') return { kind: 'progress', revision: event.revision, currentTime: event.currentTime ?? 0 };
-  return { kind: 'ready', revision: event.revision };
+  if (event.kind === 'error') return { kind: 'error', revision, message: event.error ?? 'SCENE_RUNTIME_MEDIA_ERROR', currentTime: event.currentTime ?? undefined };
+  if (event.kind === 'ended') return { kind: 'ended', revision, currentTime: event.currentTime ?? undefined };
+  if (event.kind === 'progress') return { kind: 'progress', revision, currentTime: event.currentTime ?? 0 };
+  return { kind: 'ready', revision };
 }
 
 function manualVideoLayerId(referenceId: string): string { return `manual-video-${referenceId}`; }
@@ -209,7 +217,7 @@ function publishManualLiveScene(): void {
   presentation.activePaused = video.state !== 'playing';
   presentation.activeMuted = true;
   presentation.activeVolume = 0;
-  presentation.activeLoop = false;
+  presentation.activeLoop = video.loop;
   presentation.activeAudioMuted = false;
   presentation.activeAudioVolume = audio.volume;
   presentation.activeAudioPaused = audio.state !== 'playing';
@@ -218,7 +226,10 @@ function publishManualLiveScene(): void {
   presentation.audioResumeAtMs = videoChanged && activeAudio ? manualAudioResumeAtMs : null;
   presentation.preloadLayerIds = manualLiveScene.layers.map((layer) => layer.id);
   try {
-    sceneRuntimeService.publish(manualLiveScene, 'idle', presentation);
+    timelinePlaybackController?.publish({
+      owner: 'manual-live', scene: manualLiveScene, avatarState: 'idle', presentation,
+      claim: video.state === 'playing' || audio.state === 'playing',
+    });
   } catch (error) {
     diagnosticsService?.recordThrottled('manual-live:scene-publish', 5_000, {
       level: 'error', source: 'manual-live', message: 'Manual Live scene publish failed.',
@@ -386,6 +397,7 @@ app.whenReady().then(async () => {
       'flower-gif': path.join(appRoot, 'src/assets/mock/flower.gif'),
     },
   });
+  timelinePlaybackController = new TimelinePlaybackController(sceneRuntimeService);
   await sceneRuntimeService.start();
   diagnosticsService = new DiagnosticsService(path.join(app.getPath('userData'), 'diagnostics.json'), {
     database: () => ({ component: 'database', state: database ? 'healthy' : 'offline', summary: database ? 'SQLite sẵn sàng.' : 'SQLite chưa mở.', detail: database?.path ?? null, checkedAt: '' }),
@@ -491,16 +503,22 @@ app.whenReady().then(async () => {
     }
   }));
   removeInternalDiagnostics.push(sceneRuntimeService.subscribePlaybackEnded((event) => {
-    mainWindow?.webContents.send(IPC_CHANNELS.sceneRuntimePlaybackEnded, event);
+    if (timelinePlaybackController?.snapshot().owner !== 'studio') return;
+    const sourceRevision = timelinePlaybackController.sourceRevisionFor(event.playbackRevision);
+    if (sourceRevision === null) return;
+    mainWindow?.webContents.send(IPC_CHANNELS.sceneRuntimePlaybackEnded, { ...event, playbackRevision: sourceRevision });
   }));
   removeInternalDiagnostics.push(liveStateEngine.subscribe((snapshot) => publishLiveStateSnapshot(snapshot)));
   removeInternalDiagnostics.push(preparedLiveProgramController.subscribe((snapshot) => publishPreparedLiveProgramSnapshot(snapshot)));
   removeInternalDiagnostics.push(manualVideoController.subscribe(() => publishManualLiveScene()));
   removeInternalDiagnostics.push(audioPlaylistController.subscribe(() => publishManualLiveScene()));
   removeInternalDiagnostics.push(sceneRuntimeService.subscribeMediaEvent((event) => {
+    const owner = timelinePlaybackController?.snapshot().owner;
+    const sourceRevision = timelinePlaybackController?.sourceRevisionFor(event.revision);
+    if (!owner || sourceRevision == null) return;
     const manualVideo = manualVideoController?.snapshot();
     const manualAudio = audioPlaylistController?.snapshot();
-    if (manualLiveScene && event.revision === manualLivePlaybackRevision) {
+    if (owner === 'manual-live' && manualLiveScene) {
       if (event.kind === 'progress' && manualAudio && manualAudio.currentIndex !== null && event.layerId === manualAudioLayerId(manualAudio.queue[manualAudio.currentIndex]?.id ?? '') && event.currentTime !== null) {
         manualAudioResumeAtMs = Math.round(event.currentTime * 1_000);
       }
@@ -513,14 +531,15 @@ app.whenReady().then(async () => {
     }
     const programController = preparedLiveProgramController;
     const program = programController?.snapshot();
-    if (preparedLiveProgramScene && program && programController) {
-      if (event.revision === program.revision && event.kind === 'progress' && event.layerId === program.visualVideoLayerId && event.currentTime !== null) {
-        programController.onVisualProgress(event.revision, event.currentTime);
-      } else if (event.revision === program.revision && event.kind === 'ended' && event.layerId === program.cueAudioLayerId) {
-        programController.onCueAudioEnded(event.revision);
+    if (owner === 'prepared-live-program' && preparedLiveProgramScene && program && programController) {
+      if (sourceRevision === program.revision && event.kind === 'progress' && event.layerId === program.visualVideoLayerId && event.currentTime !== null) {
+        programController.onVisualProgress(sourceRevision, event.currentTime);
+      } else if (sourceRevision === program.revision && event.kind === 'ended' && event.layerId === program.cueAudioLayerId) {
+        programController.onCueAudioEnded(sourceRevision);
       }
       return;
     }
+    if (owner !== 'live-state') return;
     const liveSnapshot = liveStateEngine?.snapshot();
     if (liveStateScene && liveSnapshot) {
       const visual = liveSnapshot.definition.avatar
@@ -532,7 +551,7 @@ app.whenReady().then(async () => {
       const clockLayerId = visual?.id ?? audio?.id ?? null;
       if (event.layerId !== clockLayerId) return;
     }
-    const runtimeEvent = toLiveRuntimeEvent(event);
+    const runtimeEvent = toLiveRuntimeEvent(event, sourceRevision);
     if (!runtimeEvent || !liveStateScene || !liveStateEngine) return;
     // Scene Runtime already rejects stale browser callbacks; the engine repeats
     // the revision check so an old media element cannot advance a new state.
@@ -607,6 +626,7 @@ app.whenReady().then(async () => {
     openAuxiliaryWindow,
     manualVideoController,
     audioPlaylistController,
+    timelinePlaybackController,
   );
   await createWindow();
   if (sceneRuntimeSmokeMode) await createSceneRuntimeSmokeWindow();
@@ -655,6 +675,7 @@ app.on('before-quit', (event) => {
     preparedLiveProgramScene = null;
     await sceneRuntimeService?.close();
     sceneRuntimeService = null;
+    timelinePlaybackController = null;
     diagnosticsService?.record({ level: 'info', source: 'app', message: 'Application shutdown completed.' });
     const lockReleased = resilienceService?.release() ?? false;
     diagnosticsService?.record({ level: lockReleased ? 'info' : 'warn', source: 'resilience', message: 'Runtime lock release completed.', details: { lockReleased } });

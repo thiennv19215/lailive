@@ -119,7 +119,8 @@ export class PreparedLiveProgramController {
     this.snapshotValue.visualCurrentTime = currentTime;
     // Base audio follows visual time only while it owns the voice channel.
     if (this.snapshotValue.baseAudioPlaying) this.snapshotValue.baseAudioCurrentTime = currentTime;
-    this.emit();
+    // Progress is telemetry, not a new presentation command. Republishing it
+    // would create a fresh Browser Source revision and seek a long video back.
     return true;
   }
 

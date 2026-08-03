@@ -127,6 +127,10 @@ const api: DesktopApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.sceneRuntimeTtsEvent, listener);
     },
   },
+  timeline: {
+    getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.timelineGetSnapshot),
+    handoff: (owner) => ipcRenderer.invoke(IPC_CHANNELS.timelineHandoff, owner),
+  },
   liveState: {
     getSnapshot: async () => liveStateSnapshotSchema.parse(await ipcRenderer.invoke(IPC_CHANNELS.liveStateGetSnapshot)),
     configure: (projectId, scene) => ipcRenderer.invoke(IPC_CHANNELS.liveStateConfigure, { projectId, scene }),

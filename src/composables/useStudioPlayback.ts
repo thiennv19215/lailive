@@ -133,6 +133,18 @@ export function useStudioPlayback(options: StudioPlaybackOptions) {
     if (event.kind === 'ended') controller.onEnded(current.activeScriptId, current.playbackRevision);
     if (event.kind === 'error') controller.onError(current.activeScriptId, current.playbackRevision, event.error ?? 'TTS không phát được.');
   });
+  async function claimStudio(): Promise<boolean> {
+    // Starting a Studio sequence is an operator action and may intentionally
+    // take output back from Manual Live or another timeline producer.
+    try {
+      await globalThis.window.desktopApi.timeline.handoff('studio');
+      return true;
+    } catch (error) {
+      const detail = error instanceof Error && error.message ? ` ${error.message}` : '';
+      options.onPlaybackError(`Unable to take Timeline control for Studio playback.${detail}`);
+      return false;
+    }
+  }
   onBeforeUnmount(() => { cancelTts(); unsubscribe(); unsubscribeRuntimeEnded(); unsubscribeTts(); controller.dispose(); });
-  return { snapshot, scripts, sync, publish, add, remove, removeForLayer, move, normalize, toggle, startSequence: (id?: string) => controller.startSequence(id), playScript: (id: string) => controller.playScript(id), playRole: (role: PreparedScriptRole) => controller.playRole(role), pause: () => controller.pause(), resume: () => controller.resume(), skip: () => controller.skip(), stop: () => { cancelTts(); return controller.stop(); }, ready: (scriptId: string, revision: number) => controller.onReady(scriptId, revision), ended: (scriptId: string, revision: number) => controller.onEnded(scriptId, revision), error: (scriptId: string, revision: number, message: string) => controller.onError(scriptId, revision, message) };
+  return { snapshot, scripts, sync, publish, add, remove, removeForLayer, move, normalize, toggle, startSequence: async (id?: string) => { if (await claimStudio()) return controller.startSequence(id); }, playScript: async (id: string) => { if (await claimStudio()) return controller.playScript(id); }, playRole: async (role: PreparedScriptRole) => { if (await claimStudio()) return controller.playRole(role); }, pause: () => controller.pause(), resume: async () => { if (await claimStudio()) return controller.resume(); }, skip: async () => { if (await claimStudio()) return controller.skip(); }, stop: () => { cancelTts(); return controller.stop(); }, ready: (scriptId: string, revision: number) => controller.onReady(scriptId, revision), ended: (scriptId: string, revision: number) => controller.onEnded(scriptId, revision), error: (scriptId: string, revision: number, message: string) => controller.onError(scriptId, revision, message) };
 }

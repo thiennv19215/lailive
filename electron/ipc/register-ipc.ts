@@ -31,6 +31,8 @@ import type { ProjectSceneDocument } from '../../src/shared/contracts/projects';
 import type { LiveStateConfigurationResult } from '../../src/shared/contracts/live-state';
 import type { ManualLiveController } from '../services/manual-live-controller';
 import type { AudioPlaylistController } from '../services/audio-playlist-controller';
+import type { TimelinePlaybackController } from '../services/timeline-playback-controller';
+import type { TimelineOwner } from '../../src/shared/contracts/timeline';
 import { manualAutoNextSchema, manualLoopSchema, manualMediaImportSchema, manualVolumeSchema } from '../../src/shared/validation/manual-live';
 
 const closeResponseSchema = z.object({
@@ -83,6 +85,7 @@ export function registerIpcHandlers(
   onOpenAuxiliaryWindow?: (name: AuxiliaryWindowName) => Promise<AuxiliaryWindowOpenResult>,
   manualVideoController?: ManualLiveController,
   audioPlaylistController?: AudioPlaylistController,
+  timelinePlaybackController?: TimelinePlaybackController,
 ): void {
   let activeLiveStateScene: ProjectSceneDocument | null = null;
 
@@ -220,7 +223,10 @@ export function registerIpcHandlers(
     if (!manualVideoController) throw new Error('MANUAL_VIDEO_CONTROLLER_UNAVAILABLE');
     return manualVideoController.import(manualMediaImportSchema.parse(payload).references);
   });
-  ipcMain.handle(IPC_CHANNELS.manualVideoPlay, () => manualVideoController?.play() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualVideoPlay, () => {
+    timelinePlaybackController?.handoff('manual-live');
+    return manualVideoController?.play() ?? null;
+  });
   ipcMain.handle(IPC_CHANNELS.manualVideoPause, () => manualVideoController?.pause() ?? null);
   ipcMain.handle(IPC_CHANNELS.manualVideoStop, () => manualVideoController?.stop() ?? null);
   ipcMain.handle(IPC_CHANNELS.manualVideoNext, () => manualVideoController?.next() ?? null);
@@ -231,7 +237,10 @@ export function registerIpcHandlers(
     if (!audioPlaylistController) throw new Error('MANUAL_AUDIO_CONTROLLER_UNAVAILABLE');
     return audioPlaylistController.import(manualMediaImportSchema.parse(payload).references);
   });
-  ipcMain.handle(IPC_CHANNELS.manualAudioPlay, () => audioPlaylistController?.play() ?? null);
+  ipcMain.handle(IPC_CHANNELS.manualAudioPlay, () => {
+    timelinePlaybackController?.handoff('manual-live');
+    return audioPlaylistController?.play() ?? null;
+  });
   ipcMain.handle(IPC_CHANNELS.manualAudioPause, () => audioPlaylistController?.pause() ?? null);
   ipcMain.handle(IPC_CHANNELS.manualAudioStop, () => audioPlaylistController?.stop() ?? null);
   ipcMain.handle(IPC_CHANNELS.manualAudioNext, () => audioPlaylistController?.next() ?? null);
@@ -278,7 +287,15 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.sceneRuntimeGetStatus, () => sceneRuntimeService.getStatus());
   ipcMain.handle(IPC_CHANNELS.sceneRuntimePublish, (_event, payload: unknown) => {
     const parsed = sceneRuntimePublishSchema.parse(payload);
-    return recordLifecycle(diagnosticsService, 'scene', 'Scene publish completed.', () => sceneRuntimeService.publish(parsed.scene, parsed.avatarState, parsed.presentation, parsed.tts), { logSuccess: false });
+    if (!timelinePlaybackController) return recordLifecycle(diagnosticsService, 'scene', 'Scene publish completed.', () => sceneRuntimeService.publish(parsed.scene, parsed.avatarState, parsed.presentation, parsed.tts), { logSuccess: false });
+    const result = timelinePlaybackController.publish({ owner: 'studio', claim: false, ...parsed });
+    if (!result.accepted) throw new Error(`TIMELINE_OWNER_CONFLICT:${result.owner ?? 'none'}`);
+    return result.event;
+  });
+  ipcMain.handle(IPC_CHANNELS.timelineGetSnapshot, () => timelinePlaybackController?.snapshot() ?? { owner: null, revision: 0, changedAt: null });
+  ipcMain.handle(IPC_CHANNELS.timelineHandoff, (_event, owner: unknown) => {
+    if (!timelinePlaybackController) throw new Error('TIMELINE_CONTROLLER_UNAVAILABLE');
+    return timelinePlaybackController.handoff(z.enum(['studio', 'manual-live', 'live-state', 'prepared-live-program']).parse(owner) as TimelineOwner);
   });
   sceneRuntimeService.subscribeTts((event) => {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.sceneRuntimeTtsEvent, event);
@@ -307,6 +324,7 @@ export function registerIpcHandlers(
       if (!cue.audioLayerId) throw new Error(`PREPARED_LIVE_PROGRAM_CUE_AUDIO_MISSING:${command.state}`);
       if (!activeScene.layers.some((layer) => layer.id === cue.audioLayerId && layer.kind === 'audio')) throw new Error(`PREPARED_LIVE_PROGRAM_CUE_AUDIO_UNMAPPED:${command.state}`);
       if (!onPreparedLiveProgramPlay) throw new Error('PREPARED_LIVE_PROGRAM_UNAVAILABLE');
+      timelinePlaybackController?.handoff('prepared-live-program');
       return recordLifecycle(diagnosticsService, 'prepared-live-program', `Operator requested ${command.state}.`, () => onPreparedLiveProgramPlay(command), {
         details: { state: command.state, behavior: cue.behavior }, logSuccess: false,
       });
@@ -316,6 +334,7 @@ export function registerIpcHandlers(
     if (command.state !== 'IDLE' && !definition.avatar && !definition.audio) throw new Error(`LIVE_STATE_INCOMPLETE:${command.state}`);
     if (definition.avatar && !stateMediaIsMapped(definition.avatar.assetId, 'video')) throw new Error(`LIVE_STATE_AVATAR_UNMAPPED:${command.state}`);
     if (definition.audio && !stateMediaIsMapped(definition.audio.assetId, 'audio')) throw new Error(`LIVE_STATE_AUDIO_UNMAPPED:${command.state}`);
+    timelinePlaybackController?.handoff('live-state');
     return recordLifecycle(diagnosticsService, 'live-state', `Operator requested ${command.state}.`, () => liveStateEngine.play(command), {
       details: { state: command.state, interrupt: command.interrupt ?? null },
       logSuccess: false,

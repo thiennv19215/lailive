@@ -103,6 +103,10 @@ export interface DesktopApi {
     onPlaybackEnded(listener: (event: SceneRuntimePlaybackEnded) => void): () => void;
     onTtsEvent(listener: (event: import('./scene-runtime').SceneRuntimeTtsEvent) => void): () => void;
   };
+  timeline: {
+    getSnapshot(): Promise<import('./timeline').TimelineOwnershipSnapshot>;
+    handoff(owner: import('./timeline').TimelineOwner): Promise<import('./timeline').TimelineOwnershipSnapshot>;
+  };
   liveState: {
     getSnapshot(): Promise<LiveStateSnapshot>;
     configure(projectId: string, scene: ProjectSceneDocument): Promise<LiveStateConfigurationResult>;

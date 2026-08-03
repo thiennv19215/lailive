@@ -286,7 +286,9 @@ function updateLayerNode(root, layer, index, imageIndex, state) {
       if (media instanceof HTMLMediaElement) {
         const active = managed && ((presentation.pendingLayerId ?? presentation.activeLayerId) === layer.id || presentation.activeAudioLayerId === layer.id);
         // Timeline media must end so its callback can activate the next script.
-        media.loop = managed ? false : layer.loop;
+        // Manual Live is intentionally allowed to loop its active visual; all
+        // other managed timeline media must emit an end event for advancement.
+        media.loop = managed ? Boolean(presentation.activeLoop && active && layer.id === presentation.activeLayerId) : layer.loop;
         media.muted = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioMuted : presentation.activeMuted) : layer.muted;
         media.volume = active ? (presentation.activeAudioLayerId === layer.id ? presentation.activeAudioVolume : presentation.activeVolume) : layer.volume;
         const revision = String(presentation.playbackRevision);

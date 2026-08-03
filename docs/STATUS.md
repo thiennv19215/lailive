@@ -2,6 +2,17 @@
 
 ## Current phase and status
 
+**Phase 1 - Timeline Engine ownership refactor: complete for the first controller slice; OBS and long-run media verification remain pending.** A main-process Timeline Playback Controller now arbitrates a single Browser Source owner across Studio, Live State, Prepared Live Program, and Manual Live. This is not a product-parity completion claim.
+
+## Latest work session - Timeline Engine ownership and independent media continuity
+
+- Added `TimelinePlaybackController` as the sole Scene Runtime publication boundary. Its owner changes only after an explicit operator handoff and that source's next accepted publication; passive/autosave publishers cannot replace active program output.
+- Normalized every visual transition to an arbiter-owned monotonic Browser Source revision, retaining source revisions solely for callback routing. Browser media events now go only to the active owner and map safely back to its source revision.
+- Manual Live audio-only mutations retain the active visual playback revision, so volume, queue, and audio transport changes do not reset or seek the long video. Manual visual loop intent now reaches the Browser Source.
+- Prepared Program visual progress is telemetry-only and no longer republishes/seeks the visual on every media time update. Studio prepared-script operator start/play/resume/skip explicitly requests ownership; automatic scene publication cannot reclaim it.
+- Validation passed: `pnpm typecheck`; 31 focused unit tests for timeline/manual/live-state/prepared-program/runtime; 18 prepared-script + manual-continuity integration tests; `pnpm test:electron-smoke` with `pnpm dev:win`; targeted ESLint for the Studio composable; `git diff --check`.
+- Remaining verification: real OBS Browser Source/virtual-camera test, a long-video media soak, visual no-blank-frame browser-source evidence, and project-scoped persistence for Manual Live playlists.
+
 ## Latest audit - repository architecture and playback ownership
 
 - Completed the requested read-only repository audit before further feature changes. The current source has a secure Electron boundary (`contextIsolation`, sandbox, and no renderer Node access), a typed preload contract, and a loopback-only Scene Runtime bound to `127.0.0.1`.

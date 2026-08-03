@@ -84,6 +84,7 @@ export function installDevBridge(): void {
   const ttsCache = new Set<string>();
   let sceneRuntimeRevision = 0;
   let sceneRuntimeState: SceneRuntimeState | null = null;
+  let timelineSnapshot = { owner: null as import('../shared/contracts/timeline').TimelineOwner | null, revision: 0, changedAt: null as string | null };
   let sceneRuntimeLastPublishedAt: string | null = null;
   let obsConfig: ObsConfigInput = { kind: 'mock', host: '127.0.0.1', port: 4455, sceneName: 'AI Livestream', sourceName: 'AI Livestream Browser', width: 1080, height: 1920, fps: 30 };
   let obsConnected = false;
@@ -501,6 +502,13 @@ export function installDevBridge(): void {
       },
       onTtsEvent: () => () => undefined,
       onPlaybackEnded: () => () => undefined,
+    },
+    timeline: {
+      getSnapshot: async () => globalThis.structuredClone(timelineSnapshot),
+      handoff: async (owner) => {
+        if (timelineSnapshot.owner !== owner) timelineSnapshot = { owner, revision: timelineSnapshot.revision + 1, changedAt: new Date().toISOString() };
+        return globalThis.structuredClone(timelineSnapshot);
+      },
     },
     liveState: {
       getSnapshot: async () => globalThis.structuredClone(liveStateSnapshot),
