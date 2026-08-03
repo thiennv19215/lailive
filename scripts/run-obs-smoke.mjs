@@ -145,7 +145,7 @@ try {
   await obsBlock.getByRole('status').filter({ hasText: 'Browser Source' }).waitFor({ state: 'visible' });
   await dialog.locator('footer .save-button').click();
 
-  const outputPanel = page.locator('.mixer-panel.output');
+  const outputPanel = page.locator('.livestream-output');
   await outputPanel.getByText('CONNECTED').waitFor({ state: 'visible' });
   if (obsKind === 'obs-websocket') {
     await captureRealObsSource();

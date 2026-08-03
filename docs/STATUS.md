@@ -12,6 +12,7 @@
 - Prepared Program visual progress is telemetry-only and no longer republishes/seeks the visual on every media time update. Studio prepared-script operator start/play/resume/skip explicitly requests ownership; automatic scene publication cannot reclaim it.
 - Validation passed: `pnpm typecheck`; 31 focused unit tests for timeline/manual/live-state/prepared-program/runtime; 18 prepared-script + manual-continuity integration tests; `pnpm test:electron-smoke` with `pnpm dev:win`; targeted ESLint for the Studio composable; `git diff --check`.
 - Remaining verification: real OBS Browser Source/virtual-camera test, a long-video media soak, visual no-blank-frame browser-source evidence, and project-scoped persistence for Manual Live playlists.
+- Follow-up OBS mock gate: corrected the smoke selector from the retired `.mixer-panel.output` to the active `.livestream-output` dock. `pnpm test:obs-smoke` now passes with six virtual-camera cycles and reconnect coverage (`OBS_SMOKE_OK`).
 
 ## Latest audit - repository architecture and playback ownership
 

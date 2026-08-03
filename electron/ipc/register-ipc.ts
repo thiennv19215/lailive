@@ -288,7 +288,9 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.sceneRuntimePublish, (_event, payload: unknown) => {
     const parsed = sceneRuntimePublishSchema.parse(payload);
     if (!timelinePlaybackController) return recordLifecycle(diagnosticsService, 'scene', 'Scene publish completed.', () => sceneRuntimeService.publish(parsed.scene, parsed.avatarState, parsed.presentation, parsed.tts), { logSuccess: false });
-    const result = timelinePlaybackController.publish({ owner: 'studio', claim: false, ...parsed });
+    // Studio may establish the initial idle scene, but an autosave cannot
+    // replace a producer that already owns the Browser Source.
+    const result = timelinePlaybackController.publish({ owner: 'studio', claim: true, ...parsed });
     if (!result.accepted) throw new Error(`TIMELINE_OWNER_CONFLICT:${result.owner ?? 'none'}`);
     return result.event;
   });
