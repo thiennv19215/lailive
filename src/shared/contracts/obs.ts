@@ -1,7 +1,7 @@
 export const OBS_CONFIG_KEY = 'app.obs-config';
 export const OBS_OWNED_OUTPUT_KEY = 'app.obs-owned-output';
 
-export type ObsAdapterKind = 'mock' | 'obs-websocket';
+export type ObsAdapterKind = 'embedded-libobs' | 'mock' | 'obs-websocket';
 
 export interface ObsConfig {
   kind: ObsAdapterKind;

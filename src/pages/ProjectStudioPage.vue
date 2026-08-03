@@ -1000,6 +1000,9 @@ function obsErrorMessage(error: unknown): string {
     OBS_SOURCE_NAME_CONFLICT: 'Tên Browser Source đã tồn tại nhưng không do ứng dụng quản lý. Hãy chọn tên khác.',
     OBS_VIRTUAL_CAMERA_UNAVAILABLE: 'OBS trên máy chưa có Virtual Camera; Browser Source vẫn dùng được.',
     OBS_VIRTUAL_CAMERA_ALREADY_ACTIVE: 'Virtual Camera đang được ứng dụng khác hoặc phiên OBS hiện tại sử dụng.',
+    EMBEDDED_OBS_RUNTIME_NOT_CONFIGURED: 'Output nội bộ chưa được cài. Hãy cài runtime libobs của AI Livestream.',
+    EMBEDDED_OBS_RUNTIME_NOT_FOUND: 'Không tìm thấy runtime libobs output nội bộ.',
+    EMBEDDED_OBS_RUNTIME_INVALID: 'Runtime libobs output nội bộ không đúng giao diện yêu cầu.',
   };
   return messages[code] ?? code;
 }
@@ -1418,9 +1421,9 @@ function selectVoice(option: string): void {
           <div class="config-block sliders"><strong>Giới hạn tương tác</strong><p>Cấu hình thời gian chờ để tránh spam.</p><label>Thời gian chờ chung <b>{{ globalCooldown.toFixed(1) }}s</b><input v-model.number="globalCooldown" type="range" min="0" max="10" step="0.5" /></label><label>Thời gian chờ mỗi người dùng <b>{{ userCooldown }}s</b><input v-model.number="userCooldown" type="range" min="5" max="120" step="5" /></label></div>
           <div class="config-block product-pin"><strong>Ghim sản phẩm TikTok</strong><p>Bật để AI tự động ghim sản phẩm theo kịch bản và bình luận.</p><div class="product-pin-status"><span><b>TikTok Live Manager</b><small aria-live="polite">{{ pinManagerStatus }}</small></span><button type="button" class="pin-manager-action" :disabled="pinManagerState === 'checking'" @click="openPinManagerMock"><MonitorUp :size="13" />{{ pinManagerState === 'login-required' ? 'Thử lại' : pinManagerState === 'checking' ? 'Đang mở...' : 'Mở mô phỏng' }}</button></div><div class="product-pin-status"><span><b>Tự động ghim sản phẩm</b><small>Phase 1 không điều khiển Chrome hoặc ghim sản phẩm thật.</small></span><button type="button" class="switch" :class="{ on: productPinEnabled }" :aria-pressed="productPinEnabled" aria-label="Bật tự động ghim sản phẩm" @click="toggleProductPin"><span /></button></div><label>Thời gian ghim tối thiểu <b>{{ minimumPinTime }}s</b><input v-model.number="minimumPinTime" type="range" min="30" max="300" step="10" /></label></div>
           <div class="config-block obs-config-block">
-            <div><strong>Đầu ra OBS</strong><p>Ứng dụng tự tạo Browser Source từ scene hiện tại qua kết nối loopback an toàn.</p></div>
+            <div><strong>Đầu ra OBS</strong><p>Output nội bộ dùng libobs tạo Browser Source trong app; OBS WebSocket là chế độ tương thích.</p></div>
             <div class="obs-config-grid">
-              <label>Adapter<select v-model="obsConfig.kind"><option value="obs-websocket">OBS WebSocket</option><option value="mock">Mock kiểm thử</option></select></label>
+              <label>Adapter<select v-model="obsConfig.kind"><option value="embedded-libobs">Output nội bộ (libobs)</option><option value="obs-websocket">OBS WebSocket (tương thích)</option><option value="mock">Mock kiểm thử</option></select></label>
               <label>Host<input v-model="obsConfig.host" autocomplete="off" /></label>
               <label>Port<input v-model.number="obsConfig.port" type="number" min="1" max="65535" /></label>
               <label>Mật khẩu phiên này<input v-model="obsConfig.password" type="password" autocomplete="off" :placeholder="obsHasSavedPassword ? 'Đã có mật khẩu trong phiên' : 'Mật khẩu OBS WebSocket'" /></label>

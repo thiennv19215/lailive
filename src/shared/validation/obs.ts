@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const obsAdapterKindSchema = z.enum(['mock', 'obs-websocket']);
+export const obsAdapterKindSchema = z.enum(['embedded-libobs', 'mock', 'obs-websocket']);
 export const obsConfigInputSchema = z.object({
   kind: obsAdapterKindSchema,
   host: z.string().trim().min(1).max(253).refine((host) => ['127.0.0.1', 'localhost', '::1'].includes(host), 'OBS host must be local loopback.'),

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { SettingsDatabase } from './database';
 import { OBS_CONFIG_KEY, OBS_OWNED_OUTPUT_KEY, type ObsConfig, type ObsConfigInput, type ObsConnectionResult, type ObsOutputResult, type ObsStatus } from '../../src/shared/contracts/obs';
 import { obsConfigInputSchema, obsConfigSchema } from '../../src/shared/validation/obs';
+import { loadEmbeddedObsRuntime, type EmbeddedObsRuntime } from './embedded-obs-runtime';
 
 type ObsResponse = { requestStatus?: { result?: boolean; code?: number; comment?: string }; responseData?: Record<string, unknown> };
 
@@ -173,6 +174,65 @@ export class MockObsAdapter implements ObsAdapter {
   async stopVirtualCamera(): Promise<void> { if (!this.connected) throw new Error('OBS_NOT_CONNECTED'); this.virtualCameraActive = false; }
 }
 
+export class EmbeddedLibobsAdapter implements ObsAdapter {
+  private runtime: EmbeddedObsRuntime | null = null;
+  private connected = false;
+  private outputReady = false;
+  private sceneName = '';
+
+  constructor(private readonly loadRuntime: () => EmbeddedObsRuntime = loadEmbeddedObsRuntime) {}
+
+  async connect(config: ObsConfigInput): Promise<string> {
+    this.runtime = this.loadRuntime();
+    await this.runtime.startup({ locale: 'en-US', width: config.width, height: config.height, fps: config.fps });
+    this.connected = true;
+    this.outputReady = false;
+    return 'embedded-libobs';
+  }
+
+  async disconnect(): Promise<void> {
+    const runtime = this.runtime;
+    this.runtime = null;
+    this.connected = false;
+    this.outputReady = false;
+    this.sceneName = '';
+    await runtime?.shutdown();
+  }
+
+  async ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number }): Promise<{ createdScene: boolean; createdSource: boolean }> {
+    if (!this.connected || !this.runtime) throw new Error('OBS_NOT_CONNECTED');
+    const created = !this.outputReady;
+    await this.runtime.createBrowserOutput({ sceneName: input.sceneName, sourceName: input.sourceName, url: input.runtimeUrl, width: input.width, height: input.height, fps: input.fps });
+    this.sceneName = input.sceneName;
+    this.outputReady = true;
+    return { createdScene: created, createdSource: created };
+  }
+
+  async getCurrentProgramScene(): Promise<string> {
+    if (!this.connected || !this.outputReady) throw new Error('OBS_BROWSER_SOURCE_NOT_READY');
+    return this.sceneName;
+  }
+
+  async setCurrentProgramScene(sceneName: string): Promise<void> {
+    if (!this.connected || sceneName !== this.sceneName) throw new Error('EMBEDDED_OBS_SCENE_UNAVAILABLE');
+  }
+
+  async getVirtualCameraActive(): Promise<boolean> {
+    if (!this.connected || !this.runtime) throw new Error('OBS_NOT_CONNECTED');
+    return this.runtime.getVirtualCameraActive();
+  }
+
+  async startVirtualCamera(): Promise<void> {
+    if (!this.connected || !this.runtime || !this.outputReady) throw new Error('OBS_BROWSER_SOURCE_NOT_READY');
+    await this.runtime.startVirtualCamera();
+  }
+
+  async stopVirtualCamera(): Promise<void> {
+    if (!this.connected || !this.runtime) throw new Error('OBS_NOT_CONNECTED');
+    await this.runtime.stopVirtualCamera();
+  }
+}
+
 export class ObsService {
   private config: ObsConfigInput = { kind: 'obs-websocket', host: '127.0.0.1', port: 4455, sceneName: 'AI Livestream', sourceName: 'AI Livestream Browser', width: 1080, height: 1920, fps: 30 };
   private adapter: ObsAdapter | null = null;
@@ -185,7 +245,7 @@ export class ObsService {
   private previousProgramScene: string | null = null;
   private lastError: string | null = null;
 
-  constructor(private readonly database?: SettingsDatabase, private readonly adapters: { mock: ObsAdapter; 'obs-websocket': ObsAdapter } = { mock: new MockObsAdapter(), 'obs-websocket': new RealObsAdapter() }) {
+  constructor(private readonly database?: SettingsDatabase, private readonly adapters: Partial<Record<ObsConfigInput['kind'], ObsAdapter>> = { 'embedded-libobs': new EmbeddedLibobsAdapter(), mock: new MockObsAdapter(), 'obs-websocket': new RealObsAdapter() }) {
     const stored = obsConfigSchema.safeParse(database?.get<unknown>(OBS_CONFIG_KEY)?.value);
     if (stored.success) this.config = { ...stored.data, password: undefined };
   }
@@ -206,7 +266,8 @@ export class ObsService {
     this.setConfig(input);
     try {
       await this.disconnect();
-      this.adapter = this.adapters[this.config.kind];
+      this.adapter = this.adapters[this.config.kind] ?? null;
+      if (!this.adapter) throw new Error(`OBS_ADAPTER_UNAVAILABLE:${this.config.kind}`);
       this.version = await this.adapter.connect(this.config);
       try {
         this.virtualCameraActive = await this.adapter.getVirtualCameraActive();

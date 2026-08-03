@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer } from 'ws';
 import { describe, expect, it } from 'vitest';
-import { MockObsAdapter, ObsService, RealObsAdapter } from '../../electron/services/obs';
+import { EmbeddedLibobsAdapter, MockObsAdapter, ObsService, RealObsAdapter } from '../../electron/services/obs';
 import type { SettingsDatabase } from '../../electron/services/database';
 import { OBS_CONFIG_KEY, OBS_OWNED_OUTPUT_KEY } from '../../src/shared/contracts/obs';
 import { obsConfigInputSchema, obsEnsureOutputSchema } from '../../src/shared/validation/obs';
@@ -31,6 +31,30 @@ const config = {
 };
 
 describe('ObsService', () => {
+  it('runs the reference-shaped embedded Browser Source to virtual-camera lifecycle', async () => {
+    const calls: string[] = [];
+    let cameraActive = false;
+    const runtime = {
+      startup: async ({ width, height, fps }: { width: number; height: number; fps: number }) => { calls.push(`startup:${width}x${height}@${fps}`); },
+      createBrowserOutput: async ({ url }: { url: string }) => { calls.push(`browser:${url}`); },
+      getVirtualCameraActive: async () => cameraActive,
+      startVirtualCamera: async () => { calls.push('camera:start'); cameraActive = true; },
+      stopVirtualCamera: async () => { calls.push('camera:stop'); cameraActive = false; },
+      shutdown: async () => { calls.push('shutdown'); },
+    };
+    const embedded = new EmbeddedLibobsAdapter(() => runtime);
+    const service = new ObsService(undefined, { 'embedded-libobs': embedded });
+    const embeddedConfig = { ...config, kind: 'embedded-libobs' as const };
+
+    await expect(service.testConnection(embeddedConfig)).resolves.toMatchObject({ ok: true, version: 'embedded-libobs' });
+    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: true, createdSource: true });
+    await expect(service.startVirtualCamera()).resolves.toMatchObject({ virtualCameraActive: true, virtualCameraOwned: true });
+    await expect(service.stopVirtualCamera()).resolves.toMatchObject({ virtualCameraActive: false, virtualCameraOwned: false });
+    await service.disconnect();
+
+    expect(calls).toEqual(['startup:1080x1920@30', 'browser:http://127.0.0.1:54321/', 'camera:start', 'camera:stop', 'shutdown']);
+  });
+
   it('persists public connection metadata without persisting or returning the password', () => {
     const { database, records } = fakeDatabase();
     const service = new ObsService(database);
