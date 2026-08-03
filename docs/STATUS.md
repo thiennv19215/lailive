@@ -16,6 +16,10 @@
 - `pnpm test:video-playlist-smoke` passed 100 visual/audio playlist transitions (`R1-R2-R3`).
 - Real OBS remains unverified: OBS Studio was installed and configured for loopback WebSocket port 4455 without authentication, but its process did not open the listener when launched for the smoke test. No real scene/source was modified after the listener check failed.
 
+## Latest validation gate
+
+- `pnpm test` passed: 43 test files / 228 tests, including Timeline ownership, manual continuity, Prepared Program playback, Scene Runtime, OBS adapter, persistence, resilience, media, and shop integration coverage.
+
 ## Latest work session - Timeline Engine ownership and independent media continuity
 
 - Added `TimelinePlaybackController` as the sole Scene Runtime publication boundary. Its owner changes only after an explicit operator handoff and that source's next accepted publication; passive/autosave publishers cannot replace active program output.
