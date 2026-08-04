@@ -9,12 +9,16 @@ type ObsResponse = { requestStatus?: { result?: boolean; code?: number; comment?
 export interface ObsAdapter {
   connect(config: ObsConfigInput): Promise<string>;
   disconnect(): Promise<void>;
-  ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number; allowExisting: boolean }): Promise<{ createdScene: boolean; createdSource: boolean }>;
+  ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number; allowExisting: boolean }): Promise<{ createdScene: boolean; createdSource: boolean; audioRouted: boolean }>;
   getCurrentProgramScene(): Promise<string>;
   setCurrentProgramScene(sceneName: string): Promise<void>;
   getVirtualCameraActive(): Promise<boolean>;
   startVirtualCamera(): Promise<void>;
   stopVirtualCamera(): Promise<void>;
+}
+
+export function createBrowserSourceSettings(input: { runtimeUrl: string; width: number; height: number; fps: number }): Record<string, unknown> {
+  return { url: input.runtimeUrl, width: input.width, height: input.height, fps_custom: true, fps: input.fps, shutdown: true, reroute_audio: true };
 }
 
 function sha256Base64(value: string): string {
@@ -112,7 +116,7 @@ export class RealObsAdapter implements ObsAdapter {
   private readonly client = new ObsWebSocketClient();
   connect(config: ObsConfigInput): Promise<string> { return this.client.connect(config); }
   disconnect(): Promise<void> { return this.client.close(); }
-  async ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number; allowExisting: boolean }): Promise<{ createdScene: boolean; createdSource: boolean }> {
+  async ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number; allowExisting: boolean }): Promise<{ createdScene: boolean; createdSource: boolean; audioRouted: boolean }> {
     const scenes = await this.client.request('GetSceneList') as { scenes?: Array<{ sceneName?: string }> };
     const sceneExists = scenes.scenes?.some((scene) => scene.sceneName === input.sceneName) ?? false;
     const inputs = await this.client.request('GetInputList') as { inputs?: Array<{ inputName?: string }> };
@@ -120,7 +124,7 @@ export class RealObsAdapter implements ObsAdapter {
     if (sceneExists && !input.allowExisting) throw new Error('OBS_SCENE_NAME_CONFLICT');
     if (sourceExists && !input.allowExisting) throw new Error('OBS_SOURCE_NAME_CONFLICT');
     if (!sceneExists) await this.client.request('CreateScene', { sceneName: input.sceneName });
-    const settings = { url: input.runtimeUrl, width: input.width, height: input.height, fps_custom: true, fps: input.fps, shutdown: true };
+    const settings = createBrowserSourceSettings(input);
     if (!sourceExists) {
       await this.client.request('CreateInput', { sceneName: input.sceneName, inputName: input.sourceName, inputKind: 'browser_source', inputSettings: settings, sceneItemEnabled: true });
     } else {
@@ -132,7 +136,7 @@ export class RealObsAdapter implements ObsAdapter {
       }
       await this.client.request('PressInputPropertiesButton', { inputName: input.sourceName, propertyName: 'refreshnocache' });
     }
-    return { createdScene: !sceneExists, createdSource: !sourceExists };
+    return { createdScene: !sceneExists, createdSource: !sourceExists, audioRouted: true };
   }
   async getVirtualCameraActive(): Promise<boolean> {
     const result = await this.client.request('GetVirtualCamStatus');
@@ -157,7 +161,7 @@ export class MockObsAdapter implements ObsAdapter {
   readonly sources = new Set<string>();
   async connect(): Promise<string> { this.connected = true; return 'mock-obs-30.2.3'; }
   async disconnect(): Promise<void> { this.connected = false; }
-  async ensureOutput(input: { sceneName: string; sourceName: string; allowExisting: boolean }): Promise<{ createdScene: boolean; createdSource: boolean }> {
+  async ensureOutput(input: { sceneName: string; sourceName: string; allowExisting: boolean }): Promise<{ createdScene: boolean; createdSource: boolean; audioRouted: boolean }> {
     if (!this.connected) throw new Error('OBS_NOT_CONNECTED');
     const createdScene = !this.scenes.has(input.sceneName);
     const createdSource = !this.sources.has(input.sourceName);
@@ -165,7 +169,7 @@ export class MockObsAdapter implements ObsAdapter {
     if (!createdSource && !input.allowExisting) throw new Error('OBS_SOURCE_NAME_CONFLICT');
     this.scenes.add(input.sceneName);
     this.sources.add(input.sourceName);
-    return { createdScene, createdSource };
+    return { createdScene, createdSource, audioRouted: true };
   }
   async getVirtualCameraActive(): Promise<boolean> { if (!this.connected) throw new Error('OBS_NOT_CONNECTED'); return this.virtualCameraActive; }
   async getCurrentProgramScene(): Promise<string> { if (!this.connected) throw new Error('OBS_NOT_CONNECTED'); return this.currentProgramScene; }
@@ -199,13 +203,13 @@ export class EmbeddedLibobsAdapter implements ObsAdapter {
     await runtime?.shutdown();
   }
 
-  async ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number }): Promise<{ createdScene: boolean; createdSource: boolean }> {
+  async ensureOutput(input: { sceneName: string; sourceName: string; runtimeUrl: string; width: number; height: number; fps: number }): Promise<{ createdScene: boolean; createdSource: boolean; audioRouted: boolean }> {
     if (!this.connected || !this.runtime) throw new Error('OBS_NOT_CONNECTED');
     const created = !this.outputReady;
     await this.runtime.createBrowserOutput({ sceneName: input.sceneName, sourceName: input.sourceName, url: input.runtimeUrl, width: input.width, height: input.height, fps: input.fps });
     this.sceneName = input.sceneName;
     this.outputReady = true;
-    return { createdScene: created, createdSource: created };
+    return { createdScene: created, createdSource: created, audioRouted: false };
   }
 
   async getCurrentProgramScene(): Promise<string> {
@@ -238,6 +242,7 @@ export class ObsService {
   private adapter: ObsAdapter | null = null;
   private version: string | null = null;
   private browserSourceReady = false;
+  private audioRouted = false;
   private programSceneActive = false;
   private virtualCameraAvailable = false;
   private virtualCameraActive = false;
@@ -251,7 +256,7 @@ export class ObsService {
   }
 
   getConfig(): ObsConfig { return obsConfigSchema.parse({ ...this.config, hasPassword: Boolean(this.config.password) }); }
-  getStatus(): ObsStatus { return { connected: this.adapter !== null, kind: this.config.kind, version: this.version, sceneName: this.config.sceneName, sourceName: this.config.sourceName, browserSourceReady: this.browserSourceReady, programSceneActive: this.programSceneActive, virtualCameraAvailable: this.virtualCameraAvailable, virtualCameraActive: this.virtualCameraActive, virtualCameraOwned: this.virtualCameraOwned, lastError: this.lastError }; }
+  getStatus(): ObsStatus { return { connected: this.adapter !== null, kind: this.config.kind, version: this.version, sceneName: this.config.sceneName, sourceName: this.config.sourceName, browserSourceReady: this.browserSourceReady, audioRouted: this.audioRouted, programSceneActive: this.programSceneActive, virtualCameraAvailable: this.virtualCameraAvailable, virtualCameraActive: this.virtualCameraActive, virtualCameraOwned: this.virtualCameraOwned, lastError: this.lastError }; }
 
   setConfig(input: ObsConfigInput): ObsConfig {
     const parsed = obsConfigInputSchema.parse(input);
@@ -298,6 +303,7 @@ export class ObsService {
       const result = await adapter.ensureOutput({ ...this.config, runtimeUrl, allowExisting });
       this.database?.set(OBS_OWNED_OUTPUT_KEY, { sceneName: this.config.sceneName, sourceName: this.config.sourceName });
       this.browserSourceReady = true;
+      this.audioRouted = result.audioRouted;
       this.lastError = null;
       return { ok: true, ...result, sceneName: this.config.sceneName, sourceName: this.config.sourceName, message: result.createdSource ? 'Đã tạo Browser Source riêng cho AI Livestream.' : 'Đã cập nhật Browser Source do ứng dụng quản lý.' };
     } catch (error) {
@@ -406,6 +412,7 @@ export class ObsService {
     this.adapter = null;
     this.version = null;
     this.browserSourceReady = false;
+    this.audioRouted = false;
     this.programSceneActive = false;
     this.virtualCameraAvailable = false;
     this.virtualCameraActive = false;

@@ -501,6 +501,8 @@ export function installDevBridge(): void {
         return event;
       },
       onTtsEvent: () => () => undefined,
+      playTts: async () => true,
+      stopTts: async () => true,
       onPlaybackEnded: () => () => undefined,
     },
     timeline: {
@@ -554,13 +556,13 @@ export function installDevBridge(): void {
           ? { ok: true, version: 'mock-obs-browser-dev', message: 'OBS mock đã kết nối.' }
           : { ok: false, version: null, message: 'Browser dev chỉ hỗ trợ OBS mock; dùng Electron cho OBS WebSocket.' };
       },
-      getStatus: async () => ({ connected: obsConnected, kind: obsConfig.kind, version: obsConnected ? 'mock-obs-browser-dev' : null, sceneName: obsConfig.sceneName, sourceName: obsConfig.sourceName, browserSourceReady: obsBrowserSourceReady, programSceneActive: obsProgramSceneActive, virtualCameraAvailable: obsConnected, virtualCameraActive: obsVirtualCameraActive, virtualCameraOwned: obsVirtualCameraActive, lastError: null }),
+      getStatus: async () => ({ connected: obsConnected, kind: obsConfig.kind, version: obsConnected ? 'mock-obs-browser-dev' : null, sceneName: obsConfig.sceneName, sourceName: obsConfig.sourceName, browserSourceReady: obsBrowserSourceReady, audioRouted: obsBrowserSourceReady, programSceneActive: obsProgramSceneActive, virtualCameraAvailable: obsConnected, virtualCameraActive: obsVirtualCameraActive, virtualCameraOwned: obsVirtualCameraActive, lastError: null }),
       ensureOutput: async (runtimeUrl) => {
         obsEnsureOutputSchema.parse({ runtimeUrl });
         if (!obsConnected) throw new Error('OBS_NOT_CONNECTED');
         const createdSource = !obsBrowserSourceReady;
         obsBrowserSourceReady = true;
-        return { ok: true, createdScene: createdSource, createdSource, sceneName: obsConfig.sceneName, sourceName: obsConfig.sourceName, message: createdSource ? 'Đã tạo Browser Source mock.' : 'Đã cập nhật Browser Source mock.' };
+        return { ok: true, audioRouted: true, createdScene: createdSource, createdSource, sceneName: obsConfig.sceneName, sourceName: obsConfig.sourceName, message: createdSource ? 'Đã tạo Browser Source mock.' : 'Đã cập nhật Browser Source mock.' };
       },
       showOutput: async () => {
         if (!obsConnected || !obsBrowserSourceReady) throw new Error('OBS_BROWSER_SOURCE_NOT_READY');

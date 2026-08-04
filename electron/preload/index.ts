@@ -111,6 +111,8 @@ const api: DesktopApi = {
   sceneRuntime: {
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimeGetStatus),
     publish: (scene, avatarState, presentation, tts) => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimePublish, { scene, avatarState, presentation, tts }),
+    playTts: (tts) => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimePlayTts, tts),
+    stopTts: (requestId) => ipcRenderer.invoke(IPC_CHANNELS.sceneRuntimeStopTts, requestId),
     onPlaybackEnded: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         const parsed = sceneRuntimePlaybackEndedSchema.safeParse(payload);

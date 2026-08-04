@@ -17,7 +17,7 @@ import type { AiProviderService } from '../services/ai-provider';
 import { aiProviderConfigInputSchema, aiRawGenerateRequestSchema } from '../../src/shared/validation/ai';
 import type { TtsProviderService } from '../services/tts-provider';
 import { ttsProviderConfigInputSchema, ttsSynthesizeInputSchema } from '../../src/shared/validation/tts';
-import { sceneRuntimePublishSchema } from '../../src/shared/validation/scene-runtime';
+import { sceneRuntimePublishSchema, sceneTtsPlaybackSchema } from '../../src/shared/validation/scene-runtime';
 import type { SceneRuntimeService } from '../services/scene-runtime';
 import type { ObsService } from '../services/obs';
 import { obsConfigInputSchema, obsEnsureOutputSchema } from '../../src/shared/validation/obs';
@@ -293,6 +293,15 @@ export function registerIpcHandlers(
     const result = timelinePlaybackController.publish({ owner: 'studio', claim: true, ...parsed });
     if (!result.accepted) throw new Error(`TIMELINE_OWNER_CONFLICT:${result.owner ?? 'none'}`);
     return result.event;
+  });
+  ipcMain.handle(IPC_CHANNELS.sceneRuntimePlayTts, (_event, payload: unknown) => {
+    if (!timelinePlaybackController) throw new Error('TIMELINE_CONTROLLER_UNAVAILABLE');
+    timelinePlaybackController.playTts(sceneTtsPlaybackSchema.parse(payload));
+    return true;
+  });
+  ipcMain.handle(IPC_CHANNELS.sceneRuntimeStopTts, (_event, requestId: unknown) => {
+    if (!timelinePlaybackController) return false;
+    return timelinePlaybackController.stopTts(z.string().trim().min(1).max(120).parse(requestId));
   });
   ipcMain.handle(IPC_CHANNELS.timelineGetSnapshot, () => timelinePlaybackController?.snapshot() ?? { owner: null, revision: 0, changedAt: null });
   ipcMain.handle(IPC_CHANNELS.timelineHandoff, (_event, owner: unknown) => {

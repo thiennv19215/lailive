@@ -1,5 +1,23 @@
 # Status
 
+## Latest work session - Browser Source audio output
+
+- Real OBS Browser Source settings now always include `reroute_audio: true` for both source creation and managed-source updates. `ObsStatus` and output results expose `audioRouted`, which resets on disconnect or failed output preparation.
+- Production interaction TTS now synthesizes in the existing queue but plays only in Scene Runtime through the timeline playback owner. The queue waits for the Browser Source `started`/`ended` lifecycle; cancel and clear publish `tts: null` to stop active runtime audio immediately. The local `playTtsResult` helper remains separate for intentional settings/voice-preview callers.
+- A playback watchdog now uses the project TTS timeout: if the Browser Source never returns a lifecycle event, it clears active runtime TTS and rejects the job so later interactions can continue.
+- Manual Live audio remains independently controlled through its existing active audio layer, mute, volume, pause, and queue state, and is mixed by the same OBS Browser Source rather than a second OBS source.
+- Live Control now labels the Audio Panel as `Âm thanh phát qua đầu ra OBS` and exposes Browser Source audio-routing state.
+- Validation: `pnpm typecheck` passed; focused audio-path Vitest passed 28 tests; the full suite passed 44 files / 232 tests before the final queue-sequencing test addition; `pnpm test:electron-smoke`, `pnpm test:scene-runtime-smoke` (`2.51%` visual diff), `pnpm test:obs-smoke` (mock, six cycles), and `git diff --check` passed. Full `pnpm lint` remains blocked by existing errors in `scene-runtime/runtime.js`, `LongVideoTimelineEditor.vue`, and `ProjectStudioPage.vue`.
+
+### Manual OBS acceptance checklist
+
+1. Start the app and OBS, connect OBS, and prepare the app Browser Source.
+2. Mute OBS Desktop Audio, import an MP3/WAV in Live Control, then play it.
+3. Confirm the app Browser Source meter moves, record briefly, and confirm the recording has audio.
+4. Trigger mock AI/TTS and confirm its voice appears once in that same meter.
+5. Trigger two TTS jobs rapidly and confirm the second waits for the first to end.
+6. Skip or clear while TTS is speaking and confirm the voice stops immediately.
+
 ## Current phase and status
 
 **Phase 1 - Timeline Engine ownership refactor: complete for the first controller slice; OBS and long-run media verification remain pending.** A main-process Timeline Playback Controller now arbitrates a single Browser Source owner across Studio, Live State, Prepared Live Program, and Manual Live. This is not a product-parity completion claim.

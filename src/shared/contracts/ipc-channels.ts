@@ -48,6 +48,8 @@ export const IPC_CHANNELS = {
   ttsClearCache: 'tts:clear-cache',
   sceneRuntimeGetStatus: 'scene-runtime:get-status',
   sceneRuntimePublish: 'scene-runtime:publish',
+  sceneRuntimePlayTts: 'scene-runtime:play-tts',
+  sceneRuntimeStopTts: 'scene-runtime:stop-tts',
   sceneRuntimePlaybackEnded: 'scene-runtime:playback-ended',
   sceneRuntimeTtsEvent: 'scene-runtime:tts-event',
   timelineGetSnapshot: 'timeline:get-snapshot',

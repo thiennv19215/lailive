@@ -40,8 +40,12 @@ function reportTts(kind, requestId, error = null) {
 }
 
 async function syncTts(tts) {
-  if (!tts || tts.requestId === activeTtsRequestId) return;
-  activeTtsAudio?.pause();
+  if (!tts) {
+    stopActiveTts();
+    return;
+  }
+  if (tts.requestId === activeTtsRequestId) return;
+  stopActiveTts();
   activeTtsRequestId = tts.requestId;
   const audio = new Audio(`data:${tts.mimeType};base64,${tts.audioBase64}`);
   activeTtsAudio = audio;
@@ -51,8 +55,21 @@ async function syncTts(tts) {
   console.info('[TTS] provider: browser audio');
   console.info('[TTS] audio size:', tts.audioBase64.length);
   console.info('[TTS] url: data audio URL');
-  audio.addEventListener('ended', () => { console.info('[TTS] play ended: true'); void reportTts('ended', tts.requestId); }, { once: true });
-  audio.addEventListener('error', () => { const message = 'TTS_AUDIO_PLAYBACK_ERROR'; console.error('[TTS] error:', message); void reportTts('error', tts.requestId, message); }, { once: true });
+  audio.addEventListener('ended', () => {
+    if (activeTtsRequestId !== tts.requestId || activeTtsAudio !== audio) return;
+    activeTtsAudio = null;
+    activeTtsRequestId = null;
+    console.info('[TTS] play ended: true');
+    void reportTts('ended', tts.requestId);
+  }, { once: true });
+  audio.addEventListener('error', () => {
+    if (activeTtsRequestId !== tts.requestId || activeTtsAudio !== audio) return;
+    activeTtsAudio = null;
+    activeTtsRequestId = null;
+    const message = 'TTS_AUDIO_PLAYBACK_ERROR';
+    console.error('[TTS] error:', message);
+    void reportTts('error', tts.requestId, message);
+  }, { once: true });
   try {
     await audio.play();
     console.info('[TTS] play started: true');
@@ -60,8 +77,21 @@ async function syncTts(tts) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[TTS] error:', message);
-    void reportTts('error', tts.requestId, message);
+    if (activeTtsRequestId === tts.requestId && activeTtsAudio === audio) {
+      activeTtsAudio = null;
+      activeTtsRequestId = null;
+      void reportTts('error', tts.requestId, message);
+    }
   }
+}
+
+function stopActiveTts() {
+  const audio = activeTtsAudio;
+  activeTtsAudio = null;
+  activeTtsRequestId = null;
+  if (!audio) return;
+  audio.pause();
+  try { audio.currentTime = 0; } catch { /* The browser may reject seeking an unloaded stream. */ }
 }
 
 function mediaKind(layer, scene = currentState?.scene) {

@@ -17,7 +17,7 @@ import { generateAiReply } from '../modules/ai/reply-coordinator';
 import { aiReplySettingsSchema } from '../shared/validation/ai';
 import { productCatalogSchema } from '../shared/validation/products';
 import { InteractionQueue } from '../modules/queue/interaction-queue';
-import { playTtsResult } from '../modules/tts/playback';
+import { playLiveTtsThroughSceneRuntime } from '../modules/tts/playback';
 import { createFallbackReply } from '../modules/ai/reply-engine';
 import { createDefaultTtsProjectSettings, type TtsProjectSettings } from '../shared/contracts/tts';
 import type { InteractionQueueSnapshot } from '../shared/contracts/queue';
@@ -42,7 +42,7 @@ export const useLiveStore = defineStore('live', () => {
     cancelAi: (requestId) => globalThis.window.desktopApi.ai.cancel(requestId),
     synthesize: (input) => globalThis.window.desktopApi.tts.synthesize(input),
     cancelTts: (requestId) => globalThis.window.desktopApi.tts.cancel(requestId),
-    play: playTtsResult,
+    play: playLiveTtsThroughSceneRuntime,
     onDiagnostic: (event) => { void globalThis.window.desktopApi.diagnostics.recordQueueEvent(event); },
   });
   interactionQueue.subscribe((next) => {

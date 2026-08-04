@@ -69,4 +69,19 @@ describe('TimelinePlaybackController', () => {
     controller.publish({ owner: 'manual-live', scene: createEmptyScene(), avatarState: 'idle', presentation: { ...visual, activeAudioLayerId: 'manual-audio-b', activeAudioVolume: 0.35 }, claim: true });
     expect(revisions).toEqual([1, 1]);
   });
+
+  it('attaches and clears live TTS without replacing the active presentation', () => {
+    const publish = vi.fn(() => ({ revision: 1 }));
+    const controller = new TimelinePlaybackController({ publish } as never);
+    const scene = createEmptyScene();
+    const presentation = { ...createDefaultScenePresentationState(), mode: 'playing' as const, activeLayerId: 'manual-video', activeAudioLayerId: 'manual-audio', playbackRevision: 7 };
+
+    controller.handoff('manual-live');
+    controller.publish({ owner: 'manual-live', scene, avatarState: 'idle', presentation, claim: true });
+    controller.playTts({ requestId: 'tts-1', audioBase64: 'AA==', mimeType: 'audio/wav', speed: 1, volume: 0.8 });
+    controller.stopTts('tts-1');
+
+    expect(publish).toHaveBeenNthCalledWith(2, scene, 'talking', expect.objectContaining({ activeLayerId: 'manual-video', activeAudioLayerId: 'manual-audio' }), expect.objectContaining({ requestId: 'tts-1' }));
+    expect(publish).toHaveBeenNthCalledWith(3, scene, 'idle', expect.objectContaining({ activeLayerId: 'manual-video', activeAudioLayerId: 'manual-audio' }), null);
+  });
 });
