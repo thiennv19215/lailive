@@ -47,7 +47,7 @@ describe('ObsService', () => {
     const embeddedConfig = { ...config, kind: 'embedded-libobs' as const };
 
     await expect(service.testConnection(embeddedConfig)).resolves.toMatchObject({ ok: true, version: 'embedded-libobs' });
-    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: true, createdSource: true });
+    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: true, createdSource: true, audioRouted: false });
     await expect(service.startVirtualCamera()).resolves.toMatchObject({ virtualCameraActive: true, virtualCameraOwned: true });
     await expect(service.stopVirtualCamera()).resolves.toMatchObject({ virtualCameraActive: false, virtualCameraOwned: false });
     await service.disconnect();
@@ -73,7 +73,7 @@ describe('ObsService', () => {
     const mock = new MockObsAdapter();
     const service = new ObsService(database, { mock, 'obs-websocket': new MockObsAdapter() });
     await expect(service.testConnection(config)).resolves.toMatchObject({ ok: true, version: 'mock-obs-30.2.3' });
-    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: true, createdSource: true });
+    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: true, createdSource: true, audioRouted: true });
     expect(records.get(OBS_OWNED_OUTPUT_KEY)).toEqual({ sceneName: config.sceneName, sourceName: config.sourceName });
 
     for (let cycle = 0; cycle < 5; cycle += 1) {
@@ -82,8 +82,8 @@ describe('ObsService', () => {
       await expect(service.stopVirtualCamera()).resolves.toMatchObject({ virtualCameraActive: false, virtualCameraOwned: false });
       expect(mock.currentProgramScene).toBe('Existing User Scene');
     }
-    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: false, createdSource: false });
-    await expect(service.disconnect()).resolves.toMatchObject({ connected: false, virtualCameraActive: false, browserSourceReady: false });
+    await expect(service.ensureOutput('http://127.0.0.1:54321/')).resolves.toMatchObject({ createdScene: false, createdSource: false, audioRouted: true });
+    await expect(service.disconnect()).resolves.toMatchObject({ connected: false, virtualCameraActive: false, browserSourceReady: false, audioRouted: false });
   });
 
   it('does not adopt a colliding source name without an ownership record', async () => {
@@ -124,7 +124,7 @@ describe('ObsService', () => {
     expect(service.getStatus()).toMatchObject({ connected: true, virtualCameraAvailable: false });
     await service.ensureOutput('http://127.0.0.1:54321/');
     await expect(service.startVirtualCamera()).rejects.toThrow('OBS_VIRTUAL_CAMERA_UNAVAILABLE');
-    expect(service.getStatus()).toMatchObject({ connected: true, browserSourceReady: true });
+    expect(service.getStatus()).toMatchObject({ connected: true, browserSourceReady: true, audioRouted: true });
   });
 
   it('waits for OBS to report virtual-camera state transitions before updating ownership', async () => {
@@ -164,6 +164,9 @@ describe('ObsService', () => {
     let authenticated = false;
     let virtualCameraActive = false;
     let currentProgramScene = 'User Program Scene';
+    let sceneExists = false;
+    let sourceExists = false;
+    const browserSettings: Record<string, unknown>[] = [];
     const password = 'obs-password';
     const salt = 'salt-value';
     const challenge = 'challenge-value';
@@ -183,14 +186,17 @@ describe('ObsService', () => {
         const requestType = String(message.d?.requestType);
         const requestId = String(message.d?.requestId);
         requests.push(requestType);
-        const responseData = requestType === 'GetSceneList' ? { scenes: [], currentProgramSceneName: currentProgramScene }
-          : requestType === 'GetInputList' ? { inputs: [] }
+        const responseData = requestType === 'GetSceneList' ? { scenes: sceneExists ? [{ sceneName: config.sceneName }] : [], currentProgramSceneName: currentProgramScene }
+          : requestType === 'GetInputList' ? { inputs: sourceExists ? [{ inputName: config.sourceName }] : [] }
             : requestType === 'GetVirtualCamStatus' ? { outputActive: virtualCameraActive }
               : requestType === 'GetCurrentProgramScene' ? { currentProgramSceneName: currentProgramScene }
               : {};
         if (requestType === 'StartVirtualCam') virtualCameraActive = true;
         if (requestType === 'StopVirtualCam') virtualCameraActive = false;
         if (requestType === 'SetCurrentProgramScene') currentProgramScene = String((message.d?.requestData as { sceneName?: unknown } | undefined)?.sceneName);
+        if (requestType === 'CreateScene') sceneExists = true;
+        if (requestType === 'CreateInput') sourceExists = true;
+        if (requestType === 'CreateInput' || requestType === 'SetInputSettings') browserSettings.push((message.d?.requestData as { inputSettings?: Record<string, unknown> } | undefined)?.inputSettings ?? {});
         socket.send(JSON.stringify({ op: 7, d: { requestType, requestId, requestStatus: { result: true, code: 100 }, responseData } }));
       });
     });
@@ -200,7 +206,10 @@ describe('ObsService', () => {
       const port = (server.address() as AddressInfo).port;
       await expect(adapter.connect({ ...config, kind: 'obs-websocket', port, password })).resolves.toBe('5.5.2');
       expect(authenticated).toBe(true);
-      await expect(adapter.ensureOutput({ sceneName: config.sceneName, sourceName: config.sourceName, runtimeUrl: 'http://127.0.0.1:54321/', width: 1080, height: 1920, fps: 30, allowExisting: false })).resolves.toEqual({ createdScene: true, createdSource: true });
+      const output = { sceneName: config.sceneName, sourceName: config.sourceName, runtimeUrl: 'http://127.0.0.1:54321/', width: 1080, height: 1920, fps: 30, allowExisting: false };
+      await expect(adapter.ensureOutput(output)).resolves.toEqual({ createdScene: true, createdSource: true, audioRouted: true });
+      await expect(adapter.ensureOutput({ ...output, allowExisting: true })).resolves.toEqual({ createdScene: false, createdSource: false, audioRouted: true });
+      expect(browserSettings).toEqual([expect.objectContaining({ reroute_audio: true }), expect.objectContaining({ reroute_audio: true })]);
       await expect(adapter.getCurrentProgramScene()).resolves.toBe('User Program Scene');
       await adapter.setCurrentProgramScene(config.sceneName);
       await expect(adapter.getCurrentProgramScene()).resolves.toBe(config.sceneName);
@@ -208,7 +217,7 @@ describe('ObsService', () => {
       await expect(adapter.getVirtualCameraActive()).resolves.toBe(true);
       await adapter.stopVirtualCamera();
       await expect(adapter.getVirtualCameraActive()).resolves.toBe(false);
-      expect(requests).toEqual(['GetSceneList', 'GetInputList', 'CreateScene', 'CreateInput', 'GetSceneList', 'SetCurrentProgramScene', 'GetSceneList', 'StartVirtualCam', 'GetVirtualCamStatus', 'StopVirtualCam', 'GetVirtualCamStatus']);
+      expect(requests).toEqual(['GetSceneList', 'GetInputList', 'CreateScene', 'CreateInput', 'GetSceneList', 'GetInputList', 'SetInputSettings', 'GetSceneItemId', 'PressInputPropertiesButton', 'GetSceneList', 'SetCurrentProgramScene', 'GetSceneList', 'StartVirtualCam', 'GetVirtualCamStatus', 'StopVirtualCam', 'GetVirtualCamStatus']);
       await adapter.disconnect();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

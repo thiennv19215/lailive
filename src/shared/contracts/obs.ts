@@ -27,6 +27,7 @@ export interface ObsConnectionResult {
 
 export interface ObsOutputResult {
   ok: boolean;
+  audioRouted: boolean;
   createdScene: boolean;
   createdSource: boolean;
   sceneName: string;
@@ -41,6 +42,7 @@ export interface ObsStatus {
   sceneName: string;
   sourceName: string;
   browserSourceReady: boolean;
+  audioRouted: boolean;
   programSceneActive: boolean;
   virtualCameraAvailable: boolean;
   virtualCameraActive: boolean;

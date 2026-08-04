@@ -25,6 +25,7 @@ let statusTimer: ReturnType<typeof globalThis.setInterval> | null = null;
 const currentVideo = computed(() => video.value.currentIndex === null ? null : video.value.playlist[video.value.currentIndex] ?? null);
 const currentAudio = computed(() => audio.value.currentIndex === null ? null : audio.value.queue[audio.value.currentIndex] ?? null);
 const obsLabel = computed(() => obsStatus.value?.connected ? 'CONNECTED' : 'MOCK / OFFLINE');
+const obsAudioLabel = computed(() => obsStatus.value?.audioRouted ? 'ENABLED' : 'OFFLINE');
 const sceneLabel = computed(() => sceneStatus.value?.running ? 'READY' : 'OFFLINE');
 const timelineOwnerLabel = computed(() => {
   const labels = {
@@ -164,7 +165,7 @@ function setVolume(event: Event): void {
         </article>
 
         <article class="live-panel manual-audio-panel">
-          <header class="live-panel-heading"><span class="panel-icon panel-icon--audio"><AudioLines :size="18" /></span><div><strong>AUDIO PANEL</strong><small>Independent OBS audio source</small></div></header>
+          <header class="live-panel-heading"><span class="panel-icon panel-icon--audio"><AudioLines :size="18" /></span><div><strong>AUDIO PANEL</strong><small>Âm thanh phát qua đầu ra OBS</small></div></header>
           <div class="live-now-playing live-now-playing--audio"><span class="live-now-label">AUDIO HIỆN TẠI</span><strong>{{ currentAudio?.label ?? 'Chưa có audio' }}</strong><small>{{ audio.state.toUpperCase() }} · {{ audio.queue.length }} tệp</small></div>
           <div class="live-actions live-actions--four"><button type="button" :disabled="commandInFlight || audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.play())"><Play :size="15" />Play</button><button type="button" :disabled="commandInFlight || audio.state !== 'playing'" @click="run(() => desktopApi.manualLive.audio.pause())"><Pause :size="15" />Pause</button><button type="button" :disabled="commandInFlight || audio.currentIndex === null" @click="run(() => desktopApi.manualLive.audio.stop())"><CircleStop :size="15" />Stop</button><button type="button" :disabled="commandInFlight" class="import-button" @click="importAudio"><FolderOpen :size="15" />Import Audio</button></div>
           <div class="live-switch-row"><button type="button" :disabled="commandInFlight || audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.previous())"><SkipBack :size="15" />Previous</button><button type="button" :disabled="commandInFlight || audio.queue.length === 0" @click="run(() => desktopApi.manualLive.audio.next())">Next<SkipForward :size="15" /></button></div>
@@ -173,7 +174,7 @@ function setVolume(event: Event): void {
           <div class="live-playlist"><div class="live-list-heading"><span>PLAYLIST</span><b>{{ audio.queue.length }}</b></div><ol><li v-for="(item, index) in audio.queue" :key="item.id" :class="{ active: index === audio.currentIndex }"><span>{{ index + 1 }}</span><strong>{{ item.label }}</strong><small>{{ index === audio.currentIndex ? audio.state.toUpperCase() : 'READY' }}</small></li></ol><p v-if="audio.queue.length === 0" class="live-empty">Import một hoặc nhiều audio để tạo queue.</p></div>
         </article>
 
-        <aside class="live-status-panel"><header><Activity :size="17" /><div><strong>LIVE STATUS</strong><small>Transport & output health</small></div><span class="status-live-mark">LOCAL</span></header><div class="status-line"><span>Video transport</span><b :class="`status-${video.state}`">{{ video.state.toUpperCase() }}</b></div><div class="status-line"><span>Audio transport</span><b :class="`status-${audio.state}`">{{ audio.state.toUpperCase() }}</b></div><div class="status-line"><span>OBS output</span><b :class="{ connected: obsStatus?.connected }">{{ obsLabel }}</b></div><div class="status-line"><span>Scene runtime</span><b :class="{ connected: sceneStatus?.running }">{{ sceneLabel }}</b></div><div class="status-note"><span class="status-note-dot" />Independent buses</div><p>Đổi audio không restart video.<br />Đổi video không restart audio.</p></aside>
+        <aside class="live-status-panel"><header><Activity :size="17" /><div><strong>LIVE STATUS</strong><small>Transport & output health</small></div><span class="status-live-mark">LOCAL</span></header><div class="status-line"><span>Video transport</span><b :class="`status-${video.state}`">{{ video.state.toUpperCase() }}</b></div><div class="status-line"><span>Audio transport</span><b :class="`status-${audio.state}`">{{ audio.state.toUpperCase() }}</b></div><div class="status-line"><span>OBS output</span><b :class="{ connected: obsStatus?.connected }">{{ obsLabel }}</b></div><div class="status-line"><span>Browser audio</span><b :class="{ connected: obsStatus?.audioRouted }">{{ obsAudioLabel }}</b></div><div class="status-line"><span>Scene runtime</span><b :class="{ connected: sceneStatus?.running }">{{ sceneLabel }}</b></div><div class="status-note"><span class="status-note-dot" />Independent buses</div><p>Đổi audio không restart video.<br />Đổi video không restart audio.</p></aside>
       </section>
     </div>
   </AppShell>

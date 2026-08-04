@@ -1,5 +1,8 @@
 import type { SceneRuntimeService } from './scene-runtime';
 import type { TimelineOwner, TimelineOwnershipSnapshot, TimelinePublishCommand, TimelinePublishResult } from '../../src/shared/contracts/timeline';
+import type { SceneTtsPlayback } from '../../src/shared/contracts/scene-runtime';
+import type { ProjectSceneDocument } from '../../src/shared/contracts/projects';
+import type { AvatarSpeechState } from '../../src/shared/contracts/queue';
 
 export class TimelinePlaybackController {
   private owner: TimelineOwner | null = null;
@@ -9,6 +12,10 @@ export class TimelinePlaybackController {
   private runtimePlaybackRevision = 0;
   private sourcePlaybackRevision: number | null = null;
   private manualVisualSignature: string | null = null;
+  private currentScene: ProjectSceneDocument | null = null;
+  private currentPresentation: TimelinePublishCommand['presentation'] | null = null;
+  private currentAvatarState: AvatarSpeechState = 'idle';
+  private activeTts: SceneTtsPlayback | null = null;
 
   constructor(private readonly sceneRuntime: SceneRuntimeService) {}
 
@@ -54,11 +61,32 @@ export class TimelinePlaybackController {
     if (!preserveManualVisualRevision) presentation.playbackRevision = ++this.runtimePlaybackRevision;
     else presentation.playbackRevision = this.runtimePlaybackRevision;
     this.manualVisualSignature = command.owner === 'manual-live' ? visualSignature : null;
+    this.currentScene = structuredClone(command.scene);
+    this.currentPresentation = structuredClone(presentation);
+    this.currentAvatarState = command.avatarState;
     return {
       accepted: true,
-      event: this.sceneRuntime.publish(command.scene, command.avatarState, presentation, command.tts ?? null),
+      event: this.sceneRuntime.publish(command.scene, this.activeTts ? 'talking' : command.avatarState, presentation, this.activeTts ?? command.tts ?? null),
       playbackRevision: presentation.playbackRevision,
       ...this.snapshot(),
     };
+  }
+
+  playTts(tts: SceneTtsPlayback): void {
+    if (!this.currentScene || !this.currentPresentation || !this.owner) throw new Error('SCENE_RUNTIME_SCENE_UNAVAILABLE');
+    this.activeTts = structuredClone(tts);
+    this.publishCurrentTtsState();
+  }
+
+  stopTts(requestId: string): boolean {
+    if (this.activeTts?.requestId !== requestId) return false;
+    this.activeTts = null;
+    this.publishCurrentTtsState();
+    return true;
+  }
+
+  private publishCurrentTtsState(): void {
+    if (!this.currentScene || !this.currentPresentation) return;
+    this.sceneRuntime.publish(this.currentScene, this.activeTts ? 'talking' : this.currentAvatarState, this.currentPresentation, this.activeTts);
   }
 }

@@ -508,6 +508,9 @@ app.whenReady().then(async () => {
     if (sourceRevision === null) return;
     mainWindow?.webContents.send(IPC_CHANNELS.sceneRuntimePlaybackEnded, { ...event, playbackRevision: sourceRevision });
   }));
+  removeInternalDiagnostics.push(sceneRuntimeService.subscribeTts((event) => {
+    if (event.kind === 'ended' || event.kind === 'error') timelinePlaybackController?.stopTts(event.requestId);
+  }));
   removeInternalDiagnostics.push(liveStateEngine.subscribe((snapshot) => publishLiveStateSnapshot(snapshot)));
   removeInternalDiagnostics.push(preparedLiveProgramController.subscribe((snapshot) => publishPreparedLiveProgramSnapshot(snapshot)));
   removeInternalDiagnostics.push(manualVideoController.subscribe(() => publishManualLiveScene()));

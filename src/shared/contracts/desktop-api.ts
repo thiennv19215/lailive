@@ -100,6 +100,8 @@ export interface DesktopApi {
   sceneRuntime: {
     getStatus(): Promise<SceneRuntimeStatus>;
     publish(scene: ProjectSceneDocument, avatarState: AvatarSpeechState, presentation?: ScenePresentationState, tts?: import('./scene-runtime').SceneTtsPlayback | null): Promise<SceneRuntimeEvent>;
+    playTts(tts: import('./scene-runtime').SceneTtsPlayback): Promise<boolean>;
+    stopTts(requestId: string): Promise<boolean>;
     onPlaybackEnded(listener: (event: SceneRuntimePlaybackEnded) => void): () => void;
     onTtsEvent(listener: (event: import('./scene-runtime').SceneRuntimeTtsEvent) => void): () => void;
   };

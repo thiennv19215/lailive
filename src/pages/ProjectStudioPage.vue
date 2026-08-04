@@ -163,6 +163,7 @@ const obsStatus = ref<ObsStatus>({
   sceneName: 'AI Livestream',
   sourceName: 'AI Livestream Browser',
   browserSourceReady: false,
+  audioRouted: false,
   programSceneActive: false,
   virtualCameraAvailable: false,
   virtualCameraActive: false,

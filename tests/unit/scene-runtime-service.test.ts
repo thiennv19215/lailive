@@ -59,6 +59,24 @@ describe('SceneRuntimeService', () => {
     for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
   });
 
+  it('accepts only the active TTS lifecycle and rejects stale completion events', async () => {
+    service = createService();
+    const { url } = await service.start();
+    if (!url) throw new Error('Runtime URL was not assigned.');
+    const received: string[] = [];
+    const unsubscribe = service.subscribeTts((event) => received.push(`${event.requestId}:${event.kind}`));
+    const tts = { requestId: 'tts-1', audioBase64: 'AA==', mimeType: 'audio/wav', speed: 1, volume: 1 };
+    service.publish(createEmptyScene(), 'talking', undefined, tts);
+    expect((await fetch(`${url}tts-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'tts-1', kind: 'started', error: null }) })).status).toBe(200);
+    service.publish(createEmptyScene(), 'idle', undefined, null);
+    expect((await fetch(`${url}tts-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'tts-1', kind: 'ended', error: null }) })).status).toBe(202);
+    service.publish(createEmptyScene(), 'talking', undefined, { ...tts, requestId: 'tts-2' });
+    expect((await fetch(`${url}tts-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'tts-1', kind: 'ended', error: null }) })).status).toBe(202);
+    expect((await fetch(`${url}tts-event`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'tts-2', kind: 'ended', error: null }) })).status).toBe(200);
+    expect(received).toEqual(['tts-1:started', 'tts-2:ended']);
+    unsubscribe();
+  });
+
   it('binds to loopback on an available port and serves health and controlled assets', async () => {
     service = createService();
     const status = await service.start();
